@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy 
 import matplotlib.pyplot as plt
-from lipschitz_anil import infinity_norm_normalization, two_to_infinity_norm_normalization
+from lipschitz_normalizers import infinity_norm_normalization, two_to_infinity_norm_normalization
 import tensorflow as tf
 import deel
 from deel.lip.initializers import SpectralInitializer
