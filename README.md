@@ -2,23 +2,25 @@
 
 Learn to approximate the Sign Distance Function (SDF) to the boundary of a distribution, i.e a dataset.
 
-Use a combination of Lipschitz networks, adversarial training and Hinge Kabntorovich Rubinstein loss (HKR).
+Use a combination of Lipschitz networks, adversarial training and Hinge Kantorovich Rubinstein loss (HKR).
 
 ![2D Toy example](figures/all_methods_grid.PNG)
 
 ## Structure of the repository
 
 The repository is organized as follow:
-  * `run_toy2d.py` and `run_mnist.py` launchs predefined configurations, datasets, create model, train it, and log the results.
+  * `run_*.ipynb` notebooks:
+    - `run_toy2d.ipynb` and `run_mnist.ipynb` launchs predefined configurations, datasets, create model, train it, and log the results.
+    - `run_toy2d_baselines`: baselines from Scikit-Learn to compare against and reproduce figures from the paper.
   * `ocml`: contains all source files.
     - `train.py`: adversarial generation and main training loop.
     - `priors.py`: prior of complementary distributions and data augmentation.
     - `evaluate.py`: tools to evaluate Local Lipschitz Constant (LLC) of the networks, monitore weights, and calibrate the predictions.
     - `plot.py`: plotting utilities (image, 2D contour plots, images).
     - `models.py`: definition of common Lipschitz and conventional architectures.
+    - `layers.py`: additional layers for Lipschitz networks, more compliant with the theorem of Anil et al. (2018).
     - `datasets.py`: pre-processing of common datasets in an unified framework.
-  * `configs/`: configurations for different training sets with hyper-parameters that allow reproducibility.
-  * `draft_notebooks/`: old notebooks for early experiments and POC.
+  * `draft_notebooks/`: old notebooks for early experiments and prototypes.
 
 ### Remarks
 
@@ -32,13 +34,31 @@ The following directories will be populated:
   * `weights/`: contain weights of the network architecture in `.h5` format.
   * `wandb/`: if wandb is used - to store local variables.
 
-## TODO list
+## Contribution 
+
+### Conventions
+
+Newly added functions should contain a docstring that specifies arguments, attributes and return values.
+
+When performance is an issue a tf.function decorator should be added to the outermost function. tf.function usage is discouraged for small functions.
+
+All non deterministic functions should take a tf.random.Generator as an argument. This allows for reproducibility and fast random number generation.
+
+The code uses 2-spaces indent.
+
+Whenever possible, the strategy pattern should be preferred over boolean arguments to reduce the number of arguments.
+
+### TODO list
 
 * Perlin noise for image priors.
 * Negative data augmentation pipeline.
-* 
+* Empirical Robustness against adversarial attacks.
+* Test on Fashion-MNIST, Cifar-10, Omniglot, and other tabular data.
+* Re-factor `ocml/train.py` and `ocml/priors.py` to allow arbitrary parametrization of `Q_t` using negative data augmentation, prior distribution, and adversarial training.
 
-## Old notebooks
+![Mnist GAN like images](figures/mnist_grid.PNG)
+
+## Legacy notebooks
 
 Old notebooks are still soted under `draft_notebooks.py` for completeness. They were used for early experiments and workshop paper. They should not be used for future experiments.
 
@@ -50,4 +70,4 @@ The entry point is the notebook `OneClassDraft.ipynb` with 2D toy examples. It c
 
 Larger scale experiments can be found in notebook `OneClassMnist.ipynb`. It outperforms Deep-SVDD on Mnist. It also contains the code for image generation in a GAN-like procedure.
 
-![Mnist GAN like images](figures/mnist_grid.PNG)
+

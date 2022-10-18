@@ -9,7 +9,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import plotly.express as px
 
-from evaluate import calibrate
+from ocml.evaluate import calibrate
 
 
 def get_contour(model, domain, resolution):
@@ -33,11 +33,11 @@ def get_contour(model, domain, resolution):
   z_grid = z_grid.reshape(x_grid.shape)
   return z_grid, x_coords, y_coords, grid
 
-def plot_2D_contour(model, loss_fn, X,
+def plot_2D_contour(model, loss_fn, P,
                     domain,
                     *,
                     histogram=True,  # vizualize histogram
-                    plot_seeds=None,  # plot initial seeds of adversarial sampling (for debuging) 
+                    plot_Qt=None,  # plot initial Q0 of adversarial sampling (for debuging) 
                     save_file=True,  # save the plot in a file
                     plot_wandb=True,  # also upload to wandb
                     height=1.):  # domain on which to plot the data.
@@ -46,25 +46,26 @@ def plot_2D_contour(model, loss_fn, X,
   fig = make_subplots(rows=1, cols=num_cols, # shared_xaxes=True, shared_yaxes=True,
                       subplot_titles=['Level Sets', 'Score Histogram'])
   fig.add_trace(go.Contour(z=z_grid, x=x_coords, y=y_coords, ncontours=20), row=1, col=1)
-  fig.add_trace(go.Scatter(x=X[:,0], y=X[:,1], mode='markers', marker=dict(size=1.5, color='black')), row=1, col=1)
-  if plot_seeds is not None:
-      seeds, X_adv = plot_seeds
-      fig.add_trace(go.Scatter(x=X_adv[:,0], y=X_adv[:,1], mode='markers', marker=dict(size=1.5, color='red')), row=1, col=1)
-      fig.add_trace(go.Scatter(x=seeds[:,0], y=seeds[:,1], mode='markers', marker=dict(size=1.5, color='red', symbol='cross')), row=1, col=1)
+  fig.add_trace(go.Scatter(x=P[:,0], y=P[:,1], mode='markers', marker=dict(size=1.5, color='black')), row=1, col=1)
+  if plot_Qt is not None:
+      Q0, Qt = plot_Qt
+      fig.add_trace(go.Scatter(x=Qt[:,0], y=Qt[:,1], mode='markers', marker=dict(size=1.5, color='red')), row=1, col=1)
+      fig.add_trace(go.Scatter(x=Q0[:,0], y=Q0[:,1], mode='markers', marker=dict(size=1.5, color='red', symbol='cross')), row=1, col=1)
+      if histogram:
+        y_Qt = model(tf.constant(Qt), training=True).numpy().flatten()
+        fig.add_trace(go.Histogram(x=y_Qt, name='out-distribution', histnorm='probability', marker_color='red'), row=1, col=2)
   if histogram:
-      y_pred_neg = model(tf.constant(X_adv), training=True).numpy().flatten()
       y_pred_pos = model(tf.constant(X), training=True).numpy().flatten()
-      fig.add_trace(go.Histogram(x=y_pred_neg, name='out-distribution', histnorm='probability', marker_color='red'), row=1, col=2)
       fig.add_trace(go.Histogram(x=y_pred_pos, name='in-distribution', histnorm='probability', marker_color='blue'), row=1, col=2)
       extra_infos = True
       if extra_infos:
           fig.add_shape(type="rect",
             x0=0, y0=0, x1=loss_fn.margin, y1=height*height,
             line=dict(
-                color="blue",
+                color="black",
                 width=2,
             ),
-            fillcolor="MediumSlateBlue",
+            fillcolor="black",
             opacity=0.3, row=1, col=2,
           )
           fig.add_shape(type="rect",
@@ -79,14 +80,14 @@ def plot_2D_contour(model, loss_fn, X,
           fig.add_shape(type="line",
             x0=loss_fn.margin, y0=0, x1=loss_fn.margin, y1=height,
             line=dict(
-                color="blue",
+                color="black",
                 width=2
             ), row=1, col=2
           )
           fig.add_shape(type="line",
             x0=0, y0=0, x1=0, y1=height,
             line=dict(
-                color="black",
+                color="blue",
                 width=2
             ), row=1, col=2
           )

@@ -2,14 +2,15 @@
 
 import tensorflow as tf
 import tensorflow as tf
-from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import Flatten, Dense
+from tensorflow.keras.models import Sequential
 from deel.lip.initializers import SpectralInitializer
 from deel.lip.layers import SpectralDense, SpectralConv2D, LipschitzLayer, Condensable, InvertibleDownSampling
 from deel.lip.layers import ScaledGlobalAveragePooling2D, FrobeniusDense, ScaledAveragePooling2D
 from deel.lip.activations import MaxMin, GroupSort2, FullSort
 from deel.lip.model import Sequential as DeelSequential
 from deel.lip.activations import PReLUlip, FullSort
-from lipschitz_normalizers import NormalizedDense, SpectralInfConv2D
+from ocml.layers import NormalizedDense, NormalizedConv2D
 from tensorflow.keras.layers import InputLayer, AveragePooling2D
 
 
@@ -32,7 +33,7 @@ def spectral_VGG(input_shape,
 
   for i, width in enumerate(conv_widths):
     if i == 0 and two_infinity_start:
-      layers.append(SpectralInfConv2D(conv_widths[0], window_size, normalizer='2-inf', strides=strides, projection=pgd))
+      layers.append(NormalizedConv2D(conv_widths[0], window_size, normalizer='2-inf', strides=strides, projection=pgd))
     else:
       layers.append(SpectralConv2D(width, window_size, strides=strides))
     layers.append(activation())
@@ -69,7 +70,7 @@ def normalized_VGG(input_shape,
     strides = (2, 2) if strides else (1, 1)
     for i, width in enumerate(conv_widths):
       normalizer = '2-inf' if i == 0 else 'inf'
-      layers.append(SpectralInfConv2D(width, window_size, normalizer=normalizer, strides=strides, projection=pgd))
+      layers.append(NormalizedConv2D(width, window_size, normalizer=normalizer, strides=strides, projection=pgd))
       layers.append(activation())
       if not strides:
         layers.append(AveragePooling2D((2, 2), padding='valid'))
@@ -139,4 +140,25 @@ def normalized_dense(widths,
     # linear decision without activation
     layers.append(NormalizedDense(1, normalizer='inf', projection=projection))
     model = DeelSequential(layers, k_coef_lip=k_coef_lip)
+    return model
+
+
+def conventional_dense(widths, input_shape):
+    """Create conventional network.
+    
+    Args:
+        widths: sequence of widths for the network.
+        input_shape: tuple corresponding to the shape of the input.
+        
+    Returns:
+        A conventional network.
+    """
+    # multivariate universal approximation holds
+    layers = [InputLayer(input_shape)]
+    activation =  tf.keras.layers.ReLU
+    for width in widths:
+        layers.append(Dense(width))
+        layers.append(activation())
+    layers.append(Dense(1))
+    model = Sequential(layers)
     return model

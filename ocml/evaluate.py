@@ -12,11 +12,11 @@ from deel.lip.layers import SpectralDense, SpectralConv2D, LipschitzLayer, Conde
 from deel.lip.activations import MaxMin, GroupSort, GroupSort2, FullSort
 from deel.lip.model import Sequential as DeelSequential
 from deel.lip.activations import PReLUlip, GroupSort, FullSort
-from lipschitz_normalizers import NormalizedDense, SpectralInfConv2D
 from tensorflow.keras.layers import InputLayer, Dense, Conv2D
 from deel.lip.normalizers import reshaped_kernel_orthogonalization
 
-from lipschitz_normalizers import infinity_norm_normalization, two_to_infinity_norm_normalization
+from ocml.layers import infinity_norm_normalization, two_to_infinity_norm_normalization
+from ocml.layers import NormalizedDense, NormalizedConv2D
 
 
 
@@ -27,15 +27,21 @@ def compute_batch_norm(vec):
 def check_formal_LLC(model, plot_wandb, condense=False):
   if plot_wandb:
     import wandb
+    table = wandb.Table(columns=['Singular', 'min-2-inf', 'max-2-inf', 'min-inf', 'max-inf'])
   
   if condense:
     print("WARNING: check_grads performs model.condense()")
     model.condense()
 
-  table = wandb.Table(columns=['Singular', 'min-2-inf', 'max-2-inf', 'min-inf', 'max-inf'])
   for layer in model.layers:
-    if isinstance(layer, SpectralDense) or isinstance(layer, FrobeniusDense) or isinstance(layer, NormalizedDense) or isinstance(layer, SpectralConv2D) or isinstance(layer, SpectralInfConv2D) or isinstance(layer, Dense) or isinstance(layer, Conv2D):
-      if isinstance(layer, NormalizedDense) or isinstance(layer, SpectralInfConv2D):
+    if isinstance(layer, SpectralDense)\
+      or isinstance(layer, FrobeniusDense)\
+      or isinstance(layer, NormalizedDense)\
+      or isinstance(layer, SpectralConv2D)\
+      or isinstance(layer, NormalizedConv2D)\
+      or isinstance(layer, Dense)\
+      or isinstance(layer, Conv2D):
+      if isinstance(layer, NormalizedDense) or isinstance(layer, NormalizedConv2D):
         kernel = layer.normalizer_fun(layer.kernel, layer.inf_norm_bounds)
       elif isinstance(layer, FrobeniusDense):
         kernel = layer.kernel / tf.norm(layer.kernel, axis=layer.axis_norm) * layer._get_coef()
@@ -55,7 +61,8 @@ def check_formal_LLC(model, plot_wandb, condense=False):
         inf2norm = tf.reduce_sum(reshaped**2, axis=0, keepdims=True) ** 0.5
         infnorm = tf.reduce_sum(tf.math.abs(reshaped), axis=0, keepdims=True)
         datum = [f"{np.max(singular)}", f"{np.min(inf2norm)}", f"{np.max(inf2norm)}", f"{np.min(infnorm)}", f"{np.max(infnorm)}"]
-        table.add_data(*datum)
+        if plot_wandb:
+          table.add_data(*datum)
         print(f"S={datum[0]} 2-inf=[{datum[1],datum[2]}] inf=[{datum[3],datum[4]}] 2=[{np.min(singular),np.max(singular)}]")
 
   if plot_wandb:
@@ -142,7 +149,7 @@ def calibrate(y_pos, y_neg):
   idx_max = np.argmax(scores)
   return y_sorted[idx_max], (scores[idx_max] / len(scores)) * 100, roc_auc
 
-def plot_metrics_short(pb, losses, y_adv, y_in, grad_norm, plot_wandb=True):
+def plot_metrics_short(pb, losses, infos, plot_wandb=True):
   """Plot useful metrics.
   
   Args:
@@ -152,27 +159,28 @@ def plot_metrics_short(pb, losses, y_adv, y_in, grad_norm, plot_wandb=True):
     y_in: predictions logits for positive examples.
     grad_norm: average norm of the gradient of the classifier wrt the input.
   """
-  recall = tf.reduce_mean(tf.cast(y_in > 0., dtype=tf.int32))
-  false_positive = tf.reduce_mean(tf.cast(y_adv > 0., dtype=tf.int32))
+  y_Qt, y_P, y_Q0, grad_norm = infos
+  recall = tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.int32))
+  false_positive = tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.int32))
   pb.set_postfix(recall=f'{recall:.2f}%', false_positive=f'{false_positive:.2f}%', loss=np.array(losses).mean(), grad_norm=grad_norm)
   if plot_wandb:
     import wandb
     wandb.log({'recall':recall, 'false_positive':false_positive, 'loss':losses[-1], 'grad_norm':grad_norm})
 
 def plot_metrics_long(pb, losses, infos, plot_wandb=True):
-  (y_advs_out, y_advs_in, y_in, y_seed_out, grad_norm_out, grad_norm_in, theta_out, theta_in) = infos
-  recall = tf.reduce_mean(tf.cast(y_in > 0., dtype=tf.int32))
-  false_positive = tf.reduce_mean(tf.cast(y_advs_out > 0., dtype=tf.int32))
+  (y_Qt, y_neg_P, y_P, y_Q0, grad_norm_out, grad_norm_in, theta_out, theta_in) = infos
+  recall = tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.int32))
+  false_positive = tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.int32))
   pb.set_postfix(R=f'{recall:.2f}%', FP=f'{false_positive:.2f}%',
                   loss=f'{float(np.array(losses).mean()):.3f}',
                   GN_out=f'{float(grad_norm_out):.3f}', GN_in=f'{float(grad_norm_in):.3f}',
-                  Q_t=f'{float(y_advs_out.numpy().mean()):.3f}', P=f'{float(y_in.numpy().mean()):.3f}',
-                  Q_0=f'{float(y_seed_out.numpy().mean()):.3f}', neg_P=f'{float(y_advs_in.numpy().mean()):.3f}',
+                  Q_t=f'{float(y_Qt.numpy().mean()):.3f}', P=f'{float(y_P.numpy().mean()):.3f}',
+                  Q_0=f'{float(y_Q0.numpy().mean()):.3f}', neg_P=f'{float(y_neg_P.numpy().mean()):.3f}',
                   θ_out=f'{float(theta_out):.1f}°', θ_in=f'{float(theta_in):.1f}°',)
   if plot_wandb:
     import wandb
     wandb.log({'R':recall, 'FP':false_positive, 'loss':losses[-1],
                 'GN_out':grad_norm_out, 'GN_in':grad_norm_in,
                 'θ_out':theta_out, 'θ_in':theta_in,
-                'Q_t' :float(y_advs_out.numpy().mean()), 'P':float(y_in.numpy().mean()),
-                'Q_0':float(y_seed_out.numpy().mean()), 'neg_P' :float(y_advs_in.numpy().mean())})
+                'Qt' :float(y_Qt.numpy().mean()), 'P':float(y_P.numpy().mean()),
+                'Q0':float(y_Q0.numpy().mean()), 'neg_P' :float(y_neg_P.numpy().mean())})

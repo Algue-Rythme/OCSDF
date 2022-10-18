@@ -36,7 +36,7 @@ def default_process(X, y):
   X = scaler.fit_transform(X)
   return X, y
 
-def get_np_dataset_from_str(name, num_pts, noise):
+def load_toy_2d(name, num_pts, noise):
   """Return a numpy toy dataset.
 
   Args:
