@@ -168,7 +168,7 @@ def plot_metrics_long(pb, losses, infos, plot_wandb=True):
                   GN_out=f'{float(grad_norm_out):.3f}', GN_in=f'{float(grad_norm_in):.3f}',
                   Q_t=f'{float(y_advs_out.numpy().mean()):.3f}', P=f'{float(y_in.numpy().mean()):.3f}',
                   Q_0=f'{float(y_seed_out.numpy().mean()):.3f}', neg_P=f'{float(y_advs_in.numpy().mean()):.3f}',
-                  O_out=f'{float(theta_out):.1f}°', O_in=f'{float(theta_in):.1f}°',)
+                  θ_out=f'{float(theta_out):.1f}°', θ_in=f'{float(theta_in):.1f}°',)
   if plot_wandb:
     import wandb
     wandb.log({'R':recall, 'FP':false_positive, 'loss':losses[-1],

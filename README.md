@@ -9,13 +9,14 @@ Use a combination of Lipschitz networks, adversarial training and Hinge Kabntoro
 ## Structure of the repository
 
 The repository is organized as follow:
-  * `main.py`: load datasets and configurations, create model, train it, and log the results.
-  * `train.py`: adversarial generation and main training loop.
-  * `priors.py`: prior of complementary distributions and data augmentation.
-  * `evaluate.py`: tools to evaluate Local Lipschitz Constant (LLC) of the networks, monitore weights, and calibrate the predictions.
-  * `plot.py`: plotting utilities (image, 2D contour plots, images).
-  * `models.py`: definition of common Lipschitz and conventional architectures.
-  * `datasets.py`: pre-processing of common datasets in an unified framework.
+  * `run_toy2d.py` and `run_mnist.py` launchs predefined configurations, datasets, create model, train it, and log the results.
+  * `ocml`: contains all source files.
+    - `train.py`: adversarial generation and main training loop.
+    - `priors.py`: prior of complementary distributions and data augmentation.
+    - `evaluate.py`: tools to evaluate Local Lipschitz Constant (LLC) of the networks, monitore weights, and calibrate the predictions.
+    - `plot.py`: plotting utilities (image, 2D contour plots, images).
+    - `models.py`: definition of common Lipschitz and conventional architectures.
+    - `datasets.py`: pre-processing of common datasets in an unified framework.
   * `configs/`: configurations for different training sets with hyper-parameters that allow reproducibility.
   * `draft_notebooks/`: old notebooks for early experiments and POC.
 
