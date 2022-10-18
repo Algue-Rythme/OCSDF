@@ -1,10 +1,12 @@
+"""Lipschitz layers with re-parametrization constraints."""
+
+
 from tensorflow.keras.layers import Input, Lambda, Flatten, AveragePooling2D, BatchNormalization, Conv2D, MaxPool2D, Dense, Activation
 from tensorflow.keras.models import Sequential
-from tensorflow.data import Dataset
 from tensorflow.keras.activations import relu
 import tensorflow as tf
 from tensorflow.keras import backend as K
-from deel.lip.layers import Condensable, LipschitzLayer
+from deel.lip.layers import Condensable, LipschitzLayer, SpectralDense
 from tensorflow.keras.initializers import Orthogonal
 import math
 
@@ -133,7 +135,7 @@ class NormalizedDense(Dense, LipschitzLayer, Condensable):
         return layer
 
 
-class SpectralInfConv2D(Conv2D, LipschitzLayer, Condensable):
+class NormalizedConv2D(Conv2D, LipschitzLayer, Condensable):
     def __init__(
         self,
         filters,
@@ -186,7 +188,7 @@ class SpectralInfConv2D(Conv2D, LipschitzLayer, Condensable):
             self.normalizer_fun = two_to_infinity_norm_normalization
             
     def build(self, input_shape):
-        super(SpectralInfConv2D, self).build(input_shape)
+        super(NormalizedConv2D, self).build(input_shape)
         self._init_lip_coef(input_shape)
         self.built = True
 
@@ -224,17 +226,21 @@ class SpectralInfConv2D(Conv2D, LipschitzLayer, Condensable):
             "inf_norm_bounds": self.inf_norm_bounds,
             "normalizer": self.normalizer
         }
-        base_config = super(SpectralDense, self).get_config()
+        base_config = super(Conv2D, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
     def vanilla_export(self):
         self._kwargs["name"] = self.name
-        layer = Dense(
+        layer = Conv2D(
             units=self.units,
             activation=self.activation,
             use_bias=self.use_bias,
             kernel_initializer=Orthogonal(gain=1.0),
             bias_initializer="zeros",
+            strides=self.strides,
+            padding=self.padding,
+            data_format=self.data_format,
+            dilation_rate=self.dilation_rate,
             **self._kwargs
         )
         layer.build(self.input_shape)
