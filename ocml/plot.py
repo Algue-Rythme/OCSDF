@@ -107,7 +107,7 @@ def plot_2D_contour(model, loss_fn, P,
       col=1,
   )
   fig.update_traces(opacity=0.75, row=1, col=2)
-  model_weights_path = "model_weights.h5"
+  model_weights_path = os.path.join("weights", "model_weights.h5")
   model.save_weights(model_weights_path)
   if plot_wandb and save_file:
     import wandb
