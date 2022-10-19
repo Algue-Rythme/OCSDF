@@ -20,7 +20,7 @@ The repository is organized as follow:
     - `models.py`: definition of common Lipschitz and conventional architectures.
     - `layers.py`: additional layers for Lipschitz networks, more compliant with the theorem of Anil et al. (2018).
     - `datasets.py`: pre-processing of common datasets in an unified framework.
-  * `draft_notebooks/`: old notebooks for early experiments and prototypes.
+  * `legacy_notebooks/`: old notebooks for early experiments and prototypes. Saved for reproducibility and archiving. Should be avoided for new experiments.
 
 ### Remarks
 

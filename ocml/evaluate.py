@@ -160,8 +160,8 @@ def plot_metrics_short(pb, losses, infos, plot_wandb=True):
     grad_norm: average norm of the gradient of the classifier wrt the input.
   """
   y_Qt, y_P, y_Q0, grad_norm = infos
-  recall = tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.int32))
-  false_positive = tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.int32))
+  recall = float(tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.float32)))
+  false_positive = float(tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.float32)))
   grad_norm = float(grad_norm.numpy())
   pb.set_postfix(recall=f'{recall:.2f}%', false_positive=f'{false_positive:.2f}%', loss=np.array(losses).mean(), grad_norm=grad_norm)
   if plot_wandb:
@@ -169,9 +169,17 @@ def plot_metrics_short(pb, losses, infos, plot_wandb=True):
     wandb.log({'recall':recall, 'false_positive':false_positive, 'loss':losses[-1], 'grad_norm':grad_norm})
 
 def plot_metrics_long(pb, losses, infos, plot_wandb=True):
+  """Plot useful metrics.
+  
+  Args:
+    pb: progress bar object (from tqdm).
+    losses: list of loss per step.
+    infos: tuple of useful information.
+    plot_wandb: whether to plot on wandb.
+  """
   (y_Qt, y_neg_P, y_P, y_Q0, grad_norm_out, grad_norm_in, theta_out, theta_in) = infos
-  recall = tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.int32))
-  false_positive = tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.int32))
+  recall = tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.float32))
+  false_positive = tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.float32))
   pb.set_postfix(R=f'{recall:.2f}%', FP=f'{false_positive:.2f}%',
                   loss=f'{float(np.array(losses).mean()):.3f}',
                   GN_out=f'{float(grad_norm_out):.3f}', GN_in=f'{float(grad_norm_in):.3f}',

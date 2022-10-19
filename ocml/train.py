@@ -44,7 +44,9 @@ def newton_raphson(model,
                    level_set=0.,
                    deterministic=False,
                    overshoot_boundary=False,
-                   *, infos=False):
+                   *,
+                   infos=False,
+                   **kwargs):
     """Return a batch of adversarial samples - distribution Q_t in paper.
     
     Args:
@@ -65,31 +67,32 @@ def newton_raphson(model,
         return Q0, (float(-1.), y_Q0)
       return Q0
   
-    step_size = 1. / maxiter  # normalizing factors to tune number of steps independantly.
-
     if not deterministic:
-      shape = (Q0.shape[0], 1)
+      shape = (Q0.shape[0],) + (1,)*(Q0.shape.ndims-1)
       lr = gen.uniform(shape=shape, minval=0., maxval=1.)  # random step size.
-      step_size = step_size * lr
+    else:
+      lr = 1.
+
+    step_size = 1. / maxiter  # normalizing factors to tune number of steps independently.
 
     Qt = Q0
     
     for step in range(maxiter):
         
       with tf.GradientTape(watch_accessed_variables=False) as tape:
-        tape.watch(Q0)
-        y = model(Q0, training=False)  # estimate the score of the current sample.
+        tape.watch(Qt)
+        y = model(Qt, training=False)  # estimate the score of the current sample.
       
       if step == 0:  
         y_Q0 = y  # Useful for debuging only.
       
       # Retrieve gradients of the score wrt the input.
-      grad  = tape.gradient(y, Q0)
+      grad  = tape.gradient(y, Qt)
       grad_norm_squared = compute_batch_norm(grad, squared=True)
       grad  = grad / (grad_norm_squared + 1e-8)
       
       # Broadcasting.
-      shape = (len(Q0),)+(1,)*(len(Q0.shape)-1)
+      shape = (len(Qt),)+(1,)*(len(Qt.shape)-1)
       y     = tf.reshape(y, shape)
       
       # Level set we target.
@@ -98,7 +101,7 @@ def newton_raphson(model,
         target = tf.nn.relu(target)  # do not go back to the boundary and stay inside support.
       
       # Perform one step.
-      Q_next  = Qt + step_size * target * grad
+      Q_next  = Qt + step_size * lr * target * grad
       
       # Ensure it remains inside the domain of interest - stabilize training.
       Q_next = tf.clip_by_value(Q_next, domain[0], domain[1])
@@ -111,7 +114,7 @@ def newton_raphson(model,
     return Qt
 
 # No need to compile if not using graph mode.
-def train_step(model, opt, loss_fn, x_batch, gen, maxiter, domain, pgd):
+def train_step(model, opt, loss_fn, x_batch, gen, maxiter, domain, pgd, **kwargs):
   """Perform one step of training on the model.
 
   This function is meant to be compiled with tf.function for speed.
@@ -133,7 +136,7 @@ def train_step(model, opt, loss_fn, x_batch, gen, maxiter, domain, pgd):
   seeds = uniform_sampler_tabular(gen, len(x_batch), x_batch.shape[1:], domain)
   
   # generate Q_t.
-  Qt, (grad_norm, y_Q0) = newton_raphson(model, seeds, gen, maxiter=maxiter, domain=domain, infos=True)
+  Qt, (grad_norm, y_Q0) = newton_raphson(model, seeds, gen, maxiter=maxiter, domain=domain, infos=True, **kwargs)
   
   weights = model.trainable_weights
   with tf.GradientTape() as tape:
@@ -156,9 +159,8 @@ def train_step(model, opt, loss_fn, x_batch, gen, maxiter, domain, pgd):
 train_step_compiled = tf.function(train_step)
 
 
-
 def train_loop(model, opt, loss_fn, gen, dataset, epoch_length, domain, maxiter, *,
-               graph_mode=True, pgd=False, plot_wandb=True):
+               graph_mode=True, pgd=False, plot_wandb=True, **kwargs):
   """Perform an epoch of training on the model.
 
   WARNING: only support tabular sampler for now. Needs further re-factoring to suppport images.
@@ -176,7 +178,7 @@ def train_loop(model, opt, loss_fn, gen, dataset, epoch_length, domain, maxiter,
     losses = []
     for step, x_batch in zip(range(epoch_length), dataset):  # do not replace with `enumerate` as it will not work with infinite dataset.
         
-      loss, infos = train_step_fn(model, opt, loss_fn, x_batch, gen, maxiter, domain, pgd)
+      loss, infos = train_step_fn(model, opt, loss_fn, x_batch, gen, maxiter, domain, pgd, **kwargs)
       
       losses.append(loss.numpy())
       plot_metrics_short(pb, losses, infos, plot_wandb=plot_wandb)  # update metrics in tqdm.

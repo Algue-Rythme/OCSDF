@@ -9,7 +9,7 @@ from sklearn.datasets import make_moons, make_circles, make_blobs
 import pandas as pd
 
 # Transform Numpy dataset into Tf.Dataset.
-def build_dataset(x, batch_size):  # create a tf.Dataset from numpy array
+def build_ds_from_numpy(x, batch_size):  # create a tf.Dataset from numpy array
   """Build a tf.dataset from np.array of shape (N, F) with some batch_size.
 
   Perform automatic shuffling.
