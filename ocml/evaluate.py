@@ -162,6 +162,7 @@ def plot_metrics_short(pb, losses, infos, plot_wandb=True):
   y_Qt, y_P, y_Q0, grad_norm = infos
   recall = tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.int32))
   false_positive = tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.int32))
+  grad_norm = float(grad_norm.numpy())
   pb.set_postfix(recall=f'{recall:.2f}%', false_positive=f'{false_positive:.2f}%', loss=np.array(losses).mean(), grad_norm=grad_norm)
   if plot_wandb:
     import wandb

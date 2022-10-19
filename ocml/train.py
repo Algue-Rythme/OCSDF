@@ -66,6 +66,12 @@ def newton_raphson(model,
       return Q0
   
     step_size = 1. / maxiter  # normalizing factors to tune number of steps independantly.
+
+    if not deterministic:
+      shape = (Q0.shape[0], 1)
+      lr = gen.uniform(shape=shape, minval=0., maxval=1.)  # random step size.
+      step_size = step_size * lr
+
     Qt = Q0
     
     for step in range(maxiter):
@@ -87,12 +93,9 @@ def newton_raphson(model,
       y     = tf.reshape(y, shape)
       
       # Level set we target.
-      target = -y-level_set  # tf.nn.relu ?
+      target = -y-level_set
       if overshoot_boundary:
         target = tf.nn.relu(target)  # do not go back to the boundary and stay inside support.
-      
-      if not deterministic:
-        target = gen.uniform(shape=shape, minval=tf.zeros_like(y), maxval=target)
       
       # Perform one step.
       Q_next  = Qt + step_size * target * grad

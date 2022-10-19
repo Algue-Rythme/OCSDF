@@ -55,8 +55,8 @@ def plot_2D_contour(model, loss_fn, P,
         y_Qt = model(tf.constant(Qt), training=True).numpy().flatten()
         fig.add_trace(go.Histogram(x=y_Qt, name='out-distribution', histnorm='probability', marker_color='red'), row=1, col=2)
   if histogram:
-      y_pred_pos = model(tf.constant(X), training=True).numpy().flatten()
-      fig.add_trace(go.Histogram(x=y_pred_pos, name='in-distribution', histnorm='probability', marker_color='blue'), row=1, col=2)
+      y_P = model(tf.constant(P), training=True).numpy().flatten()
+      fig.add_trace(go.Histogram(x=y_P, name='in-distribution', histnorm='probability', marker_color='blue'), row=1, col=2)
       extra_infos = True
       if extra_infos:
           fig.add_shape(type="rect",
