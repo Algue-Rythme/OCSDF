@@ -3,9 +3,6 @@
 import tensorflow as tf
 import tqdm
 
-from ocml.priors import uniform_sampler_tabular
-from ocml.evaluate import plot_metrics_short
-
 
 class SH_KR:
   def __init__(self, margin, lbda):
@@ -41,20 +38,23 @@ def newton_raphson(model,
                    gen,
                    maxiter,
                    domain, 
-                   level_set=0.,
-                   deterministic=False,
-                   overshoot_boundary=False,
                    *,
                    infos=False,
-                   **kwargs):
+                   level_set=0.,
+                   deterministic=False,
+                   overshoot_boundary=True,
+                   eta=1.):
     """Return a batch of adversarial samples - distribution Q_t in paper.
     
     Args:
       model: classifier - function f_t in paper.
       Q0: tensor of shape (B, F) of initial proposal for adversarial samples. They will be improved by following the gradient of the classifier.
       gen: tf.random.Generator for reproducibility and speed.
-      maxiiter: number of iterations of the Newton-Raphson algorithm.
+      maxiter: number of iterations of the Newton-Raphson algorithm.
       domain: tuple of two tensors of shape (F,) corresponding to the lower and upper bounds of the domain. Or tuple of two floats.
+      level_set: float - level set of the classifier to find.
+      deterministic: boolean - do not use random learning rate.
+      overshoot_boundary: boolean - allow the adversarial samples to overshoot the boundary of the domain.
       infos: return useful infos for plot and debuging (Default: False).
     
     Returns:
@@ -63,8 +63,9 @@ def newton_raphson(model,
     
     if maxiter == 0:
       if infos:
-        y_Q0 = model(Q0, training=False) 
-        return Q0, (float(-1.), y_Q0)
+        y_Q0 = model(Q0, training=True)
+        GN_Qt, lipschitz_ratio = 0., 1.
+        return Q0, (y_Q0, GN_Qt, lipschitz_ratio)
       return Q0
   
     if not deterministic:
@@ -73,15 +74,14 @@ def newton_raphson(model,
     else:
       lr = 1.
 
-    step_size = 1. / maxiter  # normalizing factors to tune number of steps independently.
-
+    step_size = eta / maxiter  # normalizing factors to tune number of steps independently.
     Qt = Q0
     
     for step in range(maxiter):
         
       with tf.GradientTape(watch_accessed_variables=False) as tape:
         tape.watch(Qt)
-        y = model(Qt, training=False)  # estimate the score of the current sample.
+        y = model(Qt, training=(step == 0))  # estimate the score of the current sample.
       
       if step == 0:  
         y_Q0 = y  # Useful for debuging only.
@@ -96,7 +96,7 @@ def newton_raphson(model,
       y     = tf.reshape(y, shape)
       
       # Level set we target.
-      target = -y-level_set
+      target = -y+level_set
       if overshoot_boundary:
         target = tf.nn.relu(target)  # do not go back to the boundary and stay inside support.
       
@@ -110,11 +110,14 @@ def newton_raphson(model,
       Qt = Q_next
     
     if infos:
-      return Qt, (float(tf.reduce_mean(grad_norm_squared**0.5)), y_Q0)
+      grad_norm = float(tf.reduce_mean(grad_norm_squared**0.5))
+      lipschitz_ratio = compute_batch_norm(Qt - Q0) / (tf.reshape(tf.abs(y_Q0), (-1,)+tuple((1,)*(Qt.shape.ndims-1)))+1e-2)
+      lipschitz_ratio = float(tf.reduce_mean(lipschitz_ratio**0.5))
+      return Qt, (y_Q0, grad_norm, lipschitz_ratio)
     return Qt
 
 # No need to compile if not using graph mode.
-def train_step(model, opt, loss_fn, x_batch, gen, maxiter, domain, pgd, **kwargs):
+def train_step(model, opt, loss_fn,  p_batch, q_batch, gen, maxiter, domain, **kwargs):
   """Perform one step of training on the model.
 
   This function is meant to be compiled with tf.function for speed.
@@ -123,44 +126,42 @@ def train_step(model, opt, loss_fn, x_batch, gen, maxiter, domain, pgd, **kwargs
     model: Lipschitz model.
     opt: optimizer.
     loss_fn: loss function.
-    x_batch: tensor of shape (B, F) of initial proposal for adversarial samples. They will be improved by following the gradient of the classifier.
+    p_batch: tensor of shape (B, F) of positive samples.
+    q_batch: tensor of shape (B, F) of initial proposal for adversarial samples. They will be improved by following the gradient of the classifier.
     gen: tf.random.Generator for reproducibility and speed.
-    maxiiter: number of iterations of the Newton-Raphson algorithm.
+    maxiter: number of iterations of the Newton-Raphson algorithm.
     domain: tuple of two tensors of shape (F,) corresponding to the lower and upper bounds of the domain. Or tuple of two floats.
-    pgd: boolean - use PGD instead of Newton-Raphson.
+    pgd: boolean - use PGD in network step.
+    kwargs: additional arguments for newton_raphson.
     
   Returns:
     tuple of (loss, infos) where loss is a scalar and infos is a tuple of useful infos for debuging.
   """
-  # generate following uniform distribution.
-  seeds = uniform_sampler_tabular(gen, len(x_batch), x_batch.shape[1:], domain)
   
   # generate Q_t.
-  Qt, (grad_norm, y_Q0) = newton_raphson(model, seeds, gen, maxiter=maxiter, domain=domain, infos=True, **kwargs)
+  Qt, infos = newton_raphson(model, q_batch, gen, maxiter=maxiter, domain=domain, infos=True, **kwargs)
   
   weights = model.trainable_weights
   with tf.GradientTape() as tape:
-    y_Qt = model(Qt, training=True)  # forward negative samples from Q.
-    y_P  = model(x_batch, training=True)  # forward positive samples from P.
+    y_P  = model(p_batch, training=True)  # forward positive samples from P.
+    y_Qt = model(Qt,      training=True)  # forward negative samples from Q.
     loss_in  = tf.reduce_mean(loss_fn(y_P))  # positive labels.
     loss_adv = tf.reduce_mean(loss_fn(-y_Qt))  # negative labels.
     loss     = loss_in + loss_adv  # optimize loss on all samples.
   
   grad = tape.gradient(loss, weights)
   opt.apply_gradients(zip(grad, weights))
-  
-  if pgd:
-    model.condense()  # Projected gradient (does not work well).
 
-  return loss, (y_Qt, y_P, y_Q0, grad_norm)
+  return loss, ((y_Qt, y_P,) + infos)
 
 
 # Pre-compile in global scope to avoid un-necessary re-compilation.
 train_step_compiled = tf.function(train_step)
 
 
-def train_loop(model, opt, loss_fn, gen, dataset, epoch_length, domain, maxiter, *,
-               graph_mode=True, pgd=False, plot_wandb=True, **kwargs):
+def train(model, opt, loss_fn, gen, P_ds, Q_ds, epoch_length, *,
+          domain, maxiter, log_metrics_fn,
+          graph_mode=True, **kwargs):
   """Perform an epoch of training on the model.
 
   WARNING: only support tabular sampler for now. Needs further re-factoring to suppport images.
@@ -170,16 +171,22 @@ def train_loop(model, opt, loss_fn, gen, dataset, epoch_length, domain, maxiter,
     opt: optimizer instance.  
     loss_fn: loss object.
     gen: tf.random.Generator for reproducibility and scaling of randomness.
-    dataset: tf.Dataset that yields an infinite sequence of batchs (or at least `epoch_length` steps).
+    P_ds: tf.Dataset that yields an infinite sequence of batchs (or at least `epoch_length` steps) from the positive distribution.
+    Q_ds: tf.Dataset that yields an infinite sequence of batchs (or at least `epoch_length` steps) from the negative distribution.
     epoch_length: number of gradient step in the epoch.
+    domain: tuple of two tensors of shape (F,) corresponding to the lower and upper bounds of the domain. Or tuple of two floats.
+    maxiter: number of iterations of the Newton-Raphson algorithm.
+    plot_metrics_fn: function that takes a tuple of (progress_bar, losses, metrics) and plot them.
+    graph_mode: boolean - use tf.function for speed.
+    **kwargs: additional arguments for the Newton-Raphson algorithm.
   """
   train_step_fn = train_step_compiled if graph_mode else train_step
   with tqdm.tqdm(total=epoch_length) as pb:
     losses = []
-    for step, x_batch in zip(range(epoch_length), dataset):  # do not replace with `enumerate` as it will not work with infinite dataset.
+    for step, p_batch, q_batch in zip(range(epoch_length), P_ds, Q_ds):  # do not replace with `enumerate` as it will not work with infinite dataset.
         
-      loss, infos = train_step_fn(model, opt, loss_fn, x_batch, gen, maxiter, domain, pgd, **kwargs)
+      loss, infos = train_step_fn(model, opt, loss_fn, p_batch, q_batch, gen, maxiter, domain, **kwargs)
       
       losses.append(loss.numpy())
-      plot_metrics_short(pb, losses, infos, plot_wandb=plot_wandb)  # update metrics in tqdm.
+      log_metrics_fn(pb, losses, infos)  # update metrics in tqdm.
       pb.update()

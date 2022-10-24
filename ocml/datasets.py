@@ -17,7 +17,8 @@ def build_ds_from_numpy(x, batch_size):  # create a tf.Dataset from numpy array
   x = np.random.permutation(x).astype('float32')
   ds = tf.data.Dataset.from_tensor_slices(x)
   to_shuffle = 2
-  ds = ds.repeat().shuffle(to_shuffle*batch_size).batch(batch_size).prefetch(4)
+  ds = ds.repeat().shuffle(to_shuffle*batch_size).batch(batch_size)
+  ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
   return ds
 
 # Rescale input and change labels.
@@ -84,3 +85,16 @@ def build_mnist(batch_size, in_labels, split='train'):
   ds = ds.repeat().shuffle(to_shuffle*batch_size)  # always repeat a dataset
   ds = ds.batch(batch_size).prefetch(4)
   return ds
+
+def ds_from_sampler(sampler, gen, batch_size, input_shape, **kwargs):
+  def generator():
+    while True:
+      yield sampler(gen, batch_size, input_shape, **kwargs)
+  output_signature = tf.TensorSpec(shape=(batch_size,)+input_shape, dtype=tf.float32)
+  ds = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
+  return ds.prefetch(tf.data.experimental.AUTOTUNE)
+
+def zip_ds(*ds):
+  zipped = tf.data.Dataset.zip(ds)
+  full_batch = zipped.map(partial(tf.concat, axis=0), zipped)
+  return full_batch

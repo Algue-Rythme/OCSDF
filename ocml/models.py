@@ -22,6 +22,7 @@ def spectral_VGG(input_shape,
                 groupsort=True,
                 strides=False,
                 two_infinity_start=False,
+                global_pooling=True,
                 pooling=True,
                 pgd=False
                 ):
@@ -37,10 +38,10 @@ def spectral_VGG(input_shape,
     else:
       layers.append(SpectralConv2D(width, window_size, strides=strides))
     layers.append(activation())
-    if not strides:
+    if pooling:
       layers.append(ScaledAveragePooling2D((2, 2)))
 
-  if pooling:
+  if global_pooling:
     layers.append(ScaledGlobalAveragePooling2D())
   else:
     layers.append(Flatten())
@@ -74,7 +75,7 @@ def normalized_VGG(input_shape,
       layers.append(activation())
       if not strides:
         layers.append(AveragePooling2D((2, 2), padding='valid'))
-      layers.append(Flatten())
+    layers.append(Flatten())
     for width in dense_widths:
       layers.append(NormalizedDense(width, normalizer='inf', projection=pgd))
       layers.append(activation())
@@ -100,10 +101,8 @@ def spectral_dense(widths,
     """
     # multivariate universal approximation holds.
     layers = [InputLayer(input_shape)]
-    layers.append(SpectralDense(widths[0]))
     activation = GroupSort2 if groupsort else FullSort
-    layers.append(activation())
-    for width in widths[1:]:
+    for width in widths:
         layers.append(SpectralDense(width))
         layers.append(activation())
     # linear decision without activation

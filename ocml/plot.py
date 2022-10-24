@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 from ocml.evaluate import calibrate
+from ocml.train import newton_raphson
 
 
 def get_contour(model, domain, resolution):
@@ -40,12 +41,27 @@ def plot_2D_contour(model, loss_fn, P,
                     plot_Qt=None,  # plot initial Q0 of adversarial sampling (for debuging) 
                     save_file=True,  # save the plot in a file
                     plot_wandb=True,  # also upload to wandb
-                    height=1.):  # domain on which to plot the data.
+                    height=1.,
+                    ncontours=20):  # domain on which to plot the data.
+  """Plot the 2D contour of the classifier and the histogram of the data.
+  
+  Args:
+      model: the classifier to plot.
+      loss_fn: the loss function for the margin.
+      P: the in-distribution.
+      domain: domain on which to plot the classifier level sets.
+      histogram: vizualize histogram of predictions.
+      plot_Qt: plot initial Q0 of adversarial sampling (for debuging).
+      save_file: save the plot and the weights in a file.
+      plot_wandb: also upload to wandb.
+      height: height bars in the histogram (useless parameter).
+      ncontours: number of contours to plot (20 by default).
+  """
   z_grid, x_coords, y_coords, grid = get_contour(model, domain, resolution=300)
   num_cols = 2 if histogram else 1
   fig = make_subplots(rows=1, cols=num_cols, # shared_xaxes=True, shared_yaxes=True,
                       subplot_titles=['Level Sets', 'Score Histogram'])
-  fig.add_trace(go.Contour(z=z_grid, x=x_coords, y=y_coords, ncontours=20), row=1, col=1)
+  fig.add_trace(go.Contour(z=z_grid, x=x_coords, y=y_coords, ncontours=ncontours), row=1, col=1)
   fig.add_trace(go.Scatter(x=P[:,0], y=P[:,1], mode='markers', marker=dict(size=1.5, color='black')), row=1, col=1)
   if plot_Qt is not None:
       Q0, Qt = plot_Qt
@@ -53,10 +69,10 @@ def plot_2D_contour(model, loss_fn, P,
       fig.add_trace(go.Scatter(x=Q0[:,0], y=Q0[:,1], mode='markers', marker=dict(size=1.5, color='red', symbol='cross')), row=1, col=1)
       if histogram:
         y_Qt = model(tf.constant(Qt), training=True).numpy().flatten()
-        fig.add_trace(go.Histogram(x=y_Qt, name='out-distribution', histnorm='probability', marker_color='red'), row=1, col=2)
+        fig.add_trace(go.Histogram(x=y_Qt, name='out-distribution', histnorm='probability', marker_color='orange'), row=1, col=2)
   if histogram:
       y_P = model(tf.constant(P), training=True).numpy().flatten()
-      fig.add_trace(go.Histogram(x=y_P, name='in-distribution', histnorm='probability', marker_color='blue'), row=1, col=2)
+      fig.add_trace(go.Histogram(x=y_P, name='in-distribution', histnorm='probability', marker_color='green'), row=1, col=2)
       extra_infos = True
       if extra_infos:
           fig.add_shape(type="rect",
@@ -80,14 +96,14 @@ def plot_2D_contour(model, loss_fn, P,
           fig.add_shape(type="line",
             x0=loss_fn.margin, y0=0, x1=loss_fn.margin, y1=height,
             line=dict(
-                color="black",
+                color="blue",
                 width=2
             ), row=1, col=2
           )
           fig.add_shape(type="line",
             x0=0, y0=0, x1=0, y1=height,
             line=dict(
-                color="blue",
+                color="black",
                 width=2
             ), row=1, col=2
           )
@@ -118,10 +134,10 @@ def plot_2D_contour(model, loss_fn, P,
   return fig
 
 def plot_imgs_grid(batch, filename,
-              num_rows=2, num_cols=8,
-              *,
-              plot_wandb=True,
-              save_file=False):
+                  num_rows=2, num_cols=8,
+                  *,
+                  plot_wandb=True,
+                  save_file=False):
   """Plot a batch of images on a grid."""
   to_plot = num_rows * num_cols
   fig = make_subplots(rows=num_rows, cols=num_cols, x_title=filename.split(".")[0])
@@ -139,20 +155,26 @@ def plot_imgs_grid(batch, filename,
     wandb.save(filename)
   return fig
 
-def plot_gan(epoch, model, advs_out, advs_in, adv_gan, *, save_file=False):
+def plot_gan(epoch, model, P, Q0, gen, maxiter, *, save_file=False, **kwargs):
   """Plot the GAN adversarial samples, the negative data augmentation, along original images."""
-  y_advs_out = model(advs_out, training=True)
-  y_advs_in  = model(advs_in , training=True)
-  y_advs_gan  = model(adv_gan , training=True)
-  print(f"Generated y_advs_out={y_advs_out.numpy().mean()}  y_advs_in={y_advs_in.numpy().mean()} y_adv_gan={y_advs_gan.numpy().mean()}")
-  fig = plot_imgs_grid(advs_out, f'advs_out_{epoch}.png', save_file=save_file)
+  deterministic = kwargs.get("deterministic", False)
+  kwargs = {k:v for (k,v) in kwargs.items() if k not in ['log_metrics_fn', 'deterministic']}
+  y_P = model(P, training=True)
+  level_set = float(tf.reduce_mean(y_P).numpy())
+  Qt   = newton_raphson(model, Q0, gen, maxiter=maxiter,     level_set=0,         deterministic=deterministic, **kwargs)
+  Qinf = newton_raphson(model, Q0, gen, maxiter=maxiter*100, level_set=level_set, deterministic=True,          **kwargs)
+  y_Q0    = model(Q0   , training=True)
+  y_Qt    = model(Qt   , training=True)
+  y_Qinf  = model(Qinf , training=True)
+  print(f"P={y_P.numpy().mean()} y_Q0={y_Q0.numpy().mean()}  y_Qt={y_Qt.numpy().mean()} y_Qinf={y_Qinf.numpy().mean()}")
+  fig = plot_imgs_grid(Q0, f'y_Q0_{epoch}.png', save_file=save_file)
   fig.show()
-  fig = plot_imgs_grid(advs_in,  f'advs_in_{epoch}.png', save_file=save_file)
+  fig = plot_imgs_grid(Qt, f'y_Qt_{epoch}.png', save_file=save_file)
   fig.show()
-  fig = plot_imgs_grid(adv_gan,  f'gan_{epoch}.png', save_file=save_file)
+  fig = plot_imgs_grid(Qinf,  f'y_Qinf_{epoch}.png', save_file=save_file)
   fig.show()
 
-def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, save_file=True, plot_ood=False, plot_wandb=True):
+def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False, plot_wandb=True, save_file=True):
   """Plot the predictions of the model on the in-distribution and out-of-distribution data."""
   y_train    = model(tf.constant(X_train), training=True).numpy().flatten()
   y_test     = model(tf.constant(X_test), training=True).numpy().flatten()
@@ -169,24 +191,22 @@ def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, save_file=True, plot
   print(f"[train/ood] ROC-AUC ={roc_auc_train}")
   print(f"[test /ood] Avg Dist ={r_test.mean-r_ood.mean} T={T_test} Acc={acc_test}%")
   print(f"[test /ood] ROC-AUC ={roc_auc_test}")
-  df = pd.DataFrame({'distribution' : ['train'] * len(y_train) + ['test'] * len(y_test) + ['ood'] * len(y_ood),
-                      'score'        : np.concatenate([y_train, y_test, y_ood], axis=0)})
-  fig = px.histogram(df, x="score", color="distribution", hover_data=df.columns, 
-                      histnorm='density', marginal="rug",  # can be `box`, `violin`
-                      opacity=0.75)
-  fig.add_shape(type="line", x0=T_test, y0=0, x1=T_test, y1=max(len(y_test), len(y_ood)),
-                line=dict(color="black", width=2))
-  fig.add_shape(type="line", x0=T_train, y0=0, x1=T_train, y1=max(len(y_train), len(y_ood)),
-                line=dict(color="orange", width=2, dash='dash'))
-  fig.show()
-  if plot_wandb:
-    import wandb
-    wandb.log({'roc_auc_train': roc_auc_train, 'T_acc_train': acc_train})
-    wandb.log({'roc_auc_test' : roc_auc_test, 'T_acc_test': acc_test})
-    if save_file and epoch%10 == 0:
-        filename = os.path.join("images", f"ood_histogram_{epoch}.png")
-        fig.write_image(filename)
-        wandb.save(filename)
-  if plot_ood:
-    filename = os.path.join("images", "mnist_ood.png")
-    return plot_imgs_grid(X_ood, filename)
+  if plot_histogram:
+    df = pd.DataFrame({'distribution' : ['train'] * len(y_train) + ['test'] * len(y_test) + ['ood'] * len(y_ood),
+                        'score'        : np.concatenate([y_train, y_test, y_ood], axis=0)})
+    fig = px.histogram(df, x="score", color="distribution", hover_data=df.columns, 
+                        histnorm='density', marginal="rug",  # can be `box`, `violin`
+                        opacity=0.75)
+    fig.add_shape(type="line", x0=T_test, y0=0, x1=T_test, y1=max(len(y_test), len(y_ood)),
+                  line=dict(color="black", width=2))
+    fig.add_shape(type="line", x0=T_train, y0=0, x1=T_train, y1=max(len(y_train), len(y_ood)),
+                  line=dict(color="orange", width=2, dash='dash'))
+    fig.show()
+    if plot_wandb:
+      import wandb
+      wandb.log({'roc_auc_train': roc_auc_train, 'T_acc_train': acc_train})
+      wandb.log({'roc_auc_test' : roc_auc_test, 'T_acc_test': acc_test})
+      if save_file and epoch%10 == 0:
+          filename = os.path.join("images", f"ood_histogram_{epoch}.png")
+          fig.write_image(filename)
+          wandb.save(filename)

@@ -1,16 +1,19 @@
 """Prior for adversarial sampling and negative data augmentation."""
 
 import abc
+from functools import partial
 
 import tensorflow as tf
 import numpy as np
+
+from perlin_noise import PerlinNoise
 
 
 def compute_batch_norm(vec):
   square_norm = tf.reduce_sum(vec ** 2., axis=tuple(range(1, len(vec.shape))), keepdims=True)
   return square_norm ** 0.5
 
-def uniform_sampler_tabular(gen, batch_size, input_shape, domain):
+def uniform_tabular(gen, batch_size, input_shape, domain):
   """Return a batch of "seeds" uniformly sampled in ball of radius that depends on enclosing domain.
   
   Args:
@@ -31,7 +34,7 @@ def uniform_sampler_tabular(gen, batch_size, input_shape, domain):
   seeds = seeds * radius * radius_max
   return seeds
 
-def uniform_sampler_image(gen, batch_size, input_shape, domain, *, sample_corners=False):
+def uniform_image(gen, batch_size, input_shape, domain, *, sample_corners=False):
   """Return a batch of "seeds" uniformly sampled in ball of radius that depends on enclosing domain.
   
   Args:
@@ -48,6 +51,35 @@ def uniform_sampler_image(gen, batch_size, input_shape, domain, *, sample_corner
   if sample_corners:
     seeds = tf.math.sign(seeds)
   return seeds
+
+def perlin_noise(gen, batch_size, input_shape, *, octaves):
+  """Return a batch of images sampled from Perlin noise.
+  
+  Args:
+    gen: tf.random.Generator for reproducibility and speed.
+    batch_size: B.
+    input_shape: tuple corresponding to the shape of the input (H, W, 1).
+    octaves: number of octaves of Perlin noise.
+    
+  Return:
+    tensor of shape (B, H, W, 1).
+  """
+  seeds = int(gen.uniform_full_int((batch_size,)))
+  height, width = input_shape[0], input_shape[1]
+  heights = np.linspace(height)
+  widths = np.linspace(width)
+  heights, widths = np.meshgrid(heights, widths)
+  coords = list(zip(heights, widths))
+  images = []
+  for seed in seeds:
+    noise = PerlinNoise(octaves=octaves, seed=seed)
+    img = [noise(coord) for coord in coords]
+    img = np.array(img).reshape((height, width, 1))
+    images.append(img)
+  images = np.stack(images)
+  return tf.constant(images, dtype=tf.float32)
+
+
 
 class NegativeDataAugmentation:
   """Base class for Negative data augmentation.

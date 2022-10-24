@@ -45,15 +45,15 @@ def check_formal_LLC(model, plot_wandb, condense=False):
         kernel = layer.normalizer_fun(layer.kernel, layer.inf_norm_bounds)
       elif isinstance(layer, FrobeniusDense):
         kernel = layer.kernel / tf.norm(layer.kernel, axis=layer.axis_norm) * layer._get_coef()
-      elif isinstance(layer, Dense):
+      elif type(layer) == Dense or type(layer) == Conv2D:
         kernel = layer.kernel
       else:
         kernel = reshaped_kernel_orthogonalization(
                 layer.kernel,
                 layer.u,
                 layer._get_coef(),
-                layer.niter_spectral,
-                layer.niter_bjorck,
+                layer.eps_spectral,
+                layer.eps_bjorck,
                 layer.beta_bjorck)[0]
             
         reshaped = kernel.numpy().reshape((-1,kernel.shape[-1]))
@@ -149,26 +149,7 @@ def calibrate(y_pos, y_neg):
   idx_max = np.argmax(scores)
   return y_sorted[idx_max], (scores[idx_max] / len(scores)) * 100, roc_auc
 
-def plot_metrics_short(pb, losses, infos, plot_wandb=True):
-  """Plot useful metrics.
-  
-  Args:
-    pb: progress bar object (from tqdm).
-    losses: list of loss per step.
-    y_adv: predictions logits for negative examples.
-    y_in: predictions logits for positive examples.
-    grad_norm: average norm of the gradient of the classifier wrt the input.
-  """
-  y_Qt, y_P, y_Q0, grad_norm = infos
-  recall = float(tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.float32)))
-  false_positive = float(tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.float32)))
-  grad_norm = float(grad_norm.numpy())
-  pb.set_postfix(recall=f'{recall:.2f}%', false_positive=f'{false_positive:.2f}%', loss=np.array(losses).mean(), grad_norm=grad_norm)
-  if plot_wandb:
-    import wandb
-    wandb.log({'recall':recall, 'false_positive':false_positive, 'loss':losses[-1], 'grad_norm':grad_norm})
-
-def plot_metrics_long(pb, losses, infos, plot_wandb=True):
+def log_metrics(pb, losses, infos, plot_wandb=True):
   """Plot useful metrics.
   
   Args:
@@ -177,19 +158,19 @@ def plot_metrics_long(pb, losses, infos, plot_wandb=True):
     infos: tuple of useful information.
     plot_wandb: whether to plot on wandb.
   """
-  (y_Qt, y_neg_P, y_P, y_Q0, grad_norm_out, grad_norm_in, theta_out, theta_in) = infos
+  y_Qt, y_P, y_Q0, GN_Qt, lipschitz_ratio = infos
+  y_neg_P = tf.constant(-1.)  # TODO: fix this hack.
   recall = tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.float32))
   false_positive = tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.float32))
+  GN_Qt = float(GN_Qt.numpy())
   pb.set_postfix(R=f'{recall:.2f}%', FP=f'{false_positive:.2f}%',
                   loss=f'{float(np.array(losses).mean()):.3f}',
-                  GN_out=f'{float(grad_norm_out):.3f}', GN_in=f'{float(grad_norm_in):.3f}',
-                  Q_t=f'{float(y_Qt.numpy().mean()):.3f}', P=f'{float(y_P.numpy().mean()):.3f}',
-                  Q_0=f'{float(y_Q0.numpy().mean()):.3f}', neg_P=f'{float(y_neg_P.numpy().mean()):.3f}',
-                  θ_out=f'{float(theta_out):.1f}°', θ_in=f'{float(theta_in):.1f}°',)
+                  GN_Qt=f'{GN_Qt:.3f}', lipschitz_ratio=f'{float(lipschitz_ratio):.3f}',
+                  Qt=f'{float(y_Qt.numpy().mean()):.3f}', P=f'{float(y_P.numpy().mean()):.3f}',
+                  Q0=f'{float(y_Q0.numpy().mean()):.3f}', neg_P=f'{float(y_neg_P.numpy().mean()):.3f}')
   if plot_wandb:
     import wandb
     wandb.log({'R':recall, 'FP':false_positive, 'loss':losses[-1],
-                'GN_out':grad_norm_out, 'GN_in':grad_norm_in,
-                'θ_out':theta_out, 'θ_in':theta_in,
+                'GN_Qt':GN_Qt, 'lipschitz_ratio':lipschitz_ratio,
                 'Qt' :float(y_Qt.numpy().mean()), 'P':float(y_P.numpy().mean()),
                 'Q0':float(y_Q0.numpy().mean()), 'neg_P' :float(y_neg_P.numpy().mean())})
