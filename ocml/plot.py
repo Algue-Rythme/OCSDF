@@ -1,6 +1,8 @@
 """Plot with Seaborn, Matplotlib or Plotly useful vizualisations."""
 
 import os
+import math
+
 import pandas as pd
 import numpy as np
 import tensorflow as tf
@@ -159,14 +161,15 @@ def plot_gan(epoch, model, P, Q0, gen, maxiter, *, save_file=False, **kwargs):
   """Plot the GAN adversarial samples, the negative data augmentation, along original images."""
   deterministic = kwargs.get("deterministic", False)
   kwargs = {k:v for (k,v) in kwargs.items() if k not in ['log_metrics_fn', 'deterministic']}
-  y_P = model(P, training=True)
-  level_set = float(tf.reduce_mean(y_P).numpy())
+  _ = model(P[:8], training=True)  # cache computations using fake batch of small size.
+  y_P = model.predict(P)
+  level_set = float(tf.reduce_mean(y_P))
   Qt   = newton_raphson(model, Q0, gen, maxiter=maxiter,     level_set=0,         deterministic=deterministic, **kwargs)
   Qinf = newton_raphson(model, Q0, gen, maxiter=maxiter*100, level_set=level_set, deterministic=True,          **kwargs)
-  y_Q0    = model(Q0   , training=True)
-  y_Qt    = model(Qt   , training=True)
-  y_Qinf  = model(Qinf , training=True)
-  print(f"P={y_P.numpy().mean()} y_Q0={y_Q0.numpy().mean()}  y_Qt={y_Qt.numpy().mean()} y_Qinf={y_Qinf.numpy().mean()}")
+  y_Q0    = model.predict(Q0)
+  y_Qt    = model.predict(Qt)
+  y_Qinf  = model.predict(Qinf)
+  print(f"P={y_P.mean()} y_Q0={y_Q0.mean()}  y_Qt={y_Qt.mean()} y_Qinf={y_Qinf.mean()}")
   fig = plot_imgs_grid(Q0, f'y_Q0_{epoch}.png', save_file=save_file)
   fig.show()
   fig = plot_imgs_grid(Qt, f'y_Qt_{epoch}.png', save_file=save_file)
@@ -176,9 +179,10 @@ def plot_gan(epoch, model, P, Q0, gen, maxiter, *, save_file=False, **kwargs):
 
 def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False, plot_wandb=True, save_file=True):
   """Plot the predictions of the model on the in-distribution and out-of-distribution data."""
-  y_train    = model(tf.constant(X_train), training=True).numpy().flatten()
-  y_test     = model(tf.constant(X_test), training=True).numpy().flatten()
-  y_ood      = model(tf.constant(X_ood), training=True).numpy().flatten()
+  _          = model(X_train[:8], training=True)  # cache computations using fake batch of small size.
+  y_train    = model.predict(X_train).flatten()
+  y_test     = model.predict(X_test).flatten()
+  y_ood      = model.predict(X_ood).flatten()
   r_train    = stats.describe(y_train, axis=None)
   r_test     = stats.describe(y_test, axis=None)
   r_ood      = stats.describe(y_ood, axis=None)
@@ -194,10 +198,13 @@ def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False
   if plot_histogram:
     df = pd.DataFrame({'distribution' : ['train'] * len(y_train) + ['test'] * len(y_test) + ['ood'] * len(y_ood),
                         'score'        : np.concatenate([y_train, y_test, y_ood], axis=0)})
+    frac = 0.05
+    df = df.sample(frac=frac, axis=0)  # produce histogram with small part of input data.
     fig = px.histogram(df, x="score", color="distribution", hover_data=df.columns, 
                         histnorm='density', marginal="rug",  # can be `box`, `violin`
                         opacity=0.75)
-    fig.add_shape(type="line", x0=T_test, y0=0, x1=T_test, y1=max(len(y_test), len(y_ood)),
+    height = math.round(max(len(y_test), len(y_ood) * frac)
+    fig.add_shape(type="line", x0=T_test, y0=0, x1=T_test, y1=),
                   line=dict(color="black", width=2))
     fig.add_shape(type="line", x0=T_train, y0=0, x1=T_train, y1=max(len(y_train), len(y_ood)),
                   line=dict(color="orange", width=2, dash='dash'))
@@ -210,3 +217,61 @@ def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False
           filename = os.path.join("images", f"ood_histogram_{epoch}.png")
           fig.write_image(filename)
           wandb.save(filename)
+
+def display_levelset_binary(model, X, levels=20, coeff=1.1):
+  """Display the level set of the model on the binary classification problem.
+
+  Origin: code copy/pasted from "When adversarial attacks become interpretable counterfactual explanations".
+  
+  Args:
+    model: the model to display.
+    X: the input data.
+    levels: the number of levels to display.
+    coeff: window size coefficient.
+  """
+  import matplotlib.pyplot as plt
+  import seaborn as sns
+
+  x_min = X[:,0].min()*coeff
+  x_max = X[:,0].max()*coeff
+  y_min = X[:,1].min()*coeff
+  y_max = X[:,1].max()*coeff
+  x = np.linspace(x_min, x_max, 120)
+  y = np.linspace(y_min, y_max,120)
+  xx, yy = np.meshgrid(x, y, sparse=False)
+  print(xx.min(),xx.max(),yy.min(),yy.max())
+
+  X_pred=np.stack((xx.ravel(),yy.ravel()),axis=1)
+  pred = model.predict(X_pred)
+  # pred=pred-pred[:,0].mean()
+  Y_pred = pred
+  Y_pred_f = pred
+  Y_pred_f = Y_pred_f.reshape(x.shape[0], y.shape[0])
+
+  fig = plt.figure(figsize=(10, 10))
+  ax1 = fig.add_subplot(111)
+  ax1.spines['left'].set_position('zero')
+  ax1.spines['right'].set_color('none')
+  ax1.spines['bottom'].set_position('zero')
+  ax1.spines['top'].set_color('none')
+
+  grid_x_ticks = np.arange(x_min, x_max, 0.2)
+  grid_y_ticks = np.arange(y_min, y_max, 0.2)
+  #ax1.set_ticks_position('both')
+  ax1.set_xticks(grid_x_ticks , minor=True)
+  ax1.set_yticks(grid_y_ticks , minor=True)
+  #ax1.grid(which='both')
+  ax1.grid(True, 'major', ls='solid', lw=0.5, color='gray')
+  ax1.grid(True, 'minor', ls='solid', lw=0.2, color='gray')
+  #ax1.set_minor_locator(mpl.ticker.AutoMinorLocator())
+  #ax1.grid(which='minor', alpha=0.3)
+  # ax2 = fig.add_subplot(312)
+  # ax3 = fig.add_subplot(313)
+  sns.scatterplot(x=X[:, 0],y=X[:, 1], color=sns.color_palette()[0], alpha=0.2, ax=ax1)
+  cset = ax1.contour(xx, yy, Y_pred_f, cmap='plasma', levels = levels)
+  ax1.clabel(cset, inline=1, fontsize=10)
+  cset = ax1.contour(xx, yy, Y_pred_f, [0.0], colors='red', linestyles='dashed', linewidths=6)
+  ax1.clabel(cset, inline=1, fontsize=14)
+  ax1.patch.set_edgecolor('black')
+  #plt.show()
+  return ax1

@@ -82,9 +82,15 @@ def build_mnist(batch_size, in_labels, split='train'):
   ds = ds.filter(filter_labels(label_set))
   ds = ds.map(preprocess_image)
   to_shuffle = 2
-  ds = ds.repeat().shuffle(to_shuffle*batch_size)  # always repeat a dataset
+  if split == 'train':
+    ds = ds.repeat().shuffle(to_shuffle*batch_size)  # always repeat a dataset
   ds = ds.batch(batch_size).prefetch(4)
   return ds
+
+def build_tf_from_tfds(ds):
+  """Build a numpy dataset from a tf.Dataset."""
+  X = tf.concat([batch for batch in ds], axis=0)
+  return X
 
 def ds_from_sampler(sampler, gen, batch_size, input_shape, **kwargs):
   def generator():

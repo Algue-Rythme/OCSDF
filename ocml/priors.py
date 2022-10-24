@@ -1,6 +1,7 @@
 """Prior for adversarial sampling and negative data augmentation."""
 
 import abc
+from dataclasses import dataclass
 from functools import partial
 
 import tensorflow as tf
@@ -80,23 +81,59 @@ def perlin_noise(gen, batch_size, input_shape, *, octaves):
   return tf.constant(images, dtype=tf.float32)
 
 
-
 class NegativeDataAugmentation:
-  """Base class for Negative data augmentation.
+  """Base class for Negative Data Augmentation (NDA).
   
   Must run code than can be run in graph mode (with tf.function).
   Hence every non deterministic operation must be done with tf.random.Generator.
   """
 
   @abc.abstractclassmethod
-  def __call__(self, gen, x_batch):
+  def transform(self, gen, ds):
     """Return a batch of adversarial samples - distribution Q_t in paper.
     
     Args:
       gen: tf.random.Generator for reproducibility and speed.
-      x_batch: tensor of shape (B, F) of initial proposal for adversarial samples. They will be improved by following the gradient of the classifier.
+      ds: tf.data.Dataset that yields batchs of shape (B, F).
     
     Returns:
         tensor of shape (B, F).
     """
     raise NotImplementedError
+
+
+@dataclass
+class Mnist_NDA(NegativeDataAugmentation):
+  """NDA for MNIST.
+
+  Attributes:
+    noise: float, standard deviation of the noise.
+    domain: tuple of two tensors of shape (F,) corresponding to the lower and upper bounds of the domain. Or tuple of two floats.
+  """
+  noise: float = 0.1
+  domain: tuple = (-1., 1.)
+
+  def transform(self, gen, ds):
+    def affine(gen, batch):
+      batch = tf.image.rot90(batch, k=gen.uniform_full_int(shape=(1,), minval=0, maxval=4))
+      batch = tf.image.random_flip_left_right(batch)
+      batch = tf.image.random_flip_up_down(batch)
+      return batch
+
+    def salt_and_pepper(gen, batch):
+      img = gen.normal(shape=batch.shape)
+      img = img * self.noise * (self.domain[1] - self.domain[0])
+      return img
+
+    def aug(batch):
+      other = tf.random.shuffle(batch, seed=gen)
+      other = affine(gen, other)
+      batch = affine(gen, batch)
+      t = gen.uniform(shape=(1,), minval=0., maxval=1.)
+      mixed = t * batch + (1-t) * other
+      salt = salt_and_pepper(gen, batch)
+      mixed = mixed + salt
+      mixed = tf.clip_by_value(mixed, self.domain[0], self.domain[1])
+      return mixed
+
+    return ds.map(aug, num_parallel_calls=tf.data.experimental.AUTOTUNE)
