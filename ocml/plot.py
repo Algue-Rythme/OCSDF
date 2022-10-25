@@ -191,10 +191,10 @@ def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False
   print(f"OOD examples {r_ood}")
   T_train, acc_train, roc_auc_train = calibrate(y_train, y_ood)
   T_test, acc_test, roc_auc_test = calibrate(y_test, y_ood)
-  print(f"[train/ood] Avg Dist={r_train.mean-r_ood.mean} T={T_train} Acc={acc_train}%")
-  print(f"[train/ood] ROC-AUC ={roc_auc_train}")
-  print(f"[test /ood] Avg Dist ={r_test.mean-r_ood.mean} T={T_test} Acc={acc_test}%")
-  print(f"[test /ood] ROC-AUC ={roc_auc_test}")
+  print(f"[train/ood] Avg Dist={r_train.mean-r_ood.mean:.3f} T={T_train:.3f} Acc={acc_train:.2f}%")
+  print(f"[train/ood] ROC-AUC ={roc_auc_train:.3f}")
+  print(f"[test /ood] Avg Dist ={r_test.mean-r_ood.mean} T={T_test:.3f} Acc={acc_test:.2f}%")
+  print(f"[test /ood] ROC-AUC ={roc_auc_test:.3f}")
   if plot_histogram:
     df = pd.DataFrame({'distribution' : ['train'] * len(y_train) + ['test'] * len(y_test) + ['ood'] * len(y_ood),
                         'score'        : np.concatenate([y_train, y_test, y_ood], axis=0)})
@@ -203,10 +203,10 @@ def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False
     fig = px.histogram(df, x="score", color="distribution", hover_data=df.columns, 
                         histnorm='density', marginal="rug",  # can be `box`, `violin`
                         opacity=0.75)
-    height = math.round(max(len(y_test), len(y_ood) * frac)
-    fig.add_shape(type="line", x0=T_test, y0=0, x1=T_test, y1=),
+    height = round(max(len(y_test), len(y_ood) * frac))
+    fig.add_shape(type="line", x0=T_test, y0=0, x1=T_test, y1=height,
                   line=dict(color="black", width=2))
-    fig.add_shape(type="line", x0=T_train, y0=0, x1=T_train, y1=max(len(y_train), len(y_ood)),
+    fig.add_shape(type="line", x0=T_train, y0=0, x1=T_train, y1=height,
                   line=dict(color="orange", width=2, dash='dash'))
     fig.show()
     if plot_wandb:

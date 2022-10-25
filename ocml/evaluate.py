@@ -139,7 +139,7 @@ def calibrate(y_pos, y_neg):
   """Calibrate the model on the test set."""
   y = np.concatenate([y_neg, y_pos], axis=0)
   labels = np.concatenate([np.zeros_like(y_neg), np.ones_like(y_pos)])
-  roc_auc = roc_auc_score(labels, y)
+  roc_auc = roc_auc_score(labels, y) * 100
   indices = np.argsort(y)
   sorted_labels = labels[indices]
   y_sorted = y[indices]
@@ -147,7 +147,9 @@ def calibrate(y_pos, y_neg):
   backward = np.cumsum(sorted_labels[::-1]) - sorted_labels[-1]
   scores = forward + backward[::-1]
   idx_max = np.argmax(scores)
-  return y_sorted[idx_max], (scores[idx_max] / len(scores)) * 100, roc_auc
+  acc = (scores[idx_max] / len(scores)) * 100
+  T = y_sorted[idx_max]
+  return T, acc, roc_auc
 
 def log_metrics(pb, losses, infos, plot_wandb=True):
   """Plot useful metrics.
