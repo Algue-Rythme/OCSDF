@@ -12,7 +12,7 @@ The repository is organized as follow:
   * `run_*.ipynb` notebooks:
     - `run_toy2d.ipynb` and `run_mnist.ipynb` launchs predefined configurations, datasets, create model, train it, and log the results.
     - `run_toy2d_baselines`: baselines from Scikit-Learn to compare against and reproduce figures from the paper.
-  * `ocml`: contains all source files.
+  * `ocml/`: contains all source files.
     - `train.py`: adversarial generation and main training loop.
     - `priors.py`: prior of complementary distributions and data augmentation.
     - `evaluate.py`: tools to evaluate Local Lipschitz Constant (LLC) of the networks, monitore weights, and calibrate the predictions.
@@ -20,6 +20,7 @@ The repository is organized as follow:
     - `models.py`: definition of common Lipschitz and conventional architectures.
     - `layers.py`: additional layers for Lipschitz networks, more compliant with the theorem of Anil et al. (2018).
     - `datasets.py`: pre-processing of common datasets in an unified framework.
+  * `experiments/`: contains the scripts to launch several experiments sequentially and upload the results to a wandb account. You should login on Wandb before running the scripts.
   * `legacy_notebooks/`: old notebooks for early experiments and prototypes. Saved for reproducibility and archiving. Should be avoided for new experiments.
 
 ### Remarks

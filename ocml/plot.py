@@ -41,7 +41,6 @@ def plot_2D_contour(model, loss_fn, P,
                     *,
                     histogram=True,  # vizualize histogram
                     plot_Qt=None,  # plot initial Q0 of adversarial sampling (for debuging) 
-                    save_file=True,  # save the plot in a file
                     plot_wandb=True,  # also upload to wandb
                     height=1.,
                     ncontours=20):  # domain on which to plot the data.
@@ -54,7 +53,6 @@ def plot_2D_contour(model, loss_fn, P,
       domain: domain on which to plot the classifier level sets.
       histogram: vizualize histogram of predictions.
       plot_Qt: plot initial Q0 of adversarial sampling (for debuging).
-      save_file: save the plot and the weights in a file.
       plot_wandb: also upload to wandb.
       height: height bars in the histogram (useless parameter).
       ncontours: number of contours to plot (20 by default).
@@ -78,7 +76,7 @@ def plot_2D_contour(model, loss_fn, P,
       extra_infos = True
       if extra_infos:
           fig.add_shape(type="rect",
-            x0=0, y0=0, x1=loss_fn.margin, y1=height*height,
+            x0=0, y0=0, x1=loss_fn.margin, y1=height,
             line=dict(
                 color="black",
                 width=2,
@@ -87,7 +85,7 @@ def plot_2D_contour(model, loss_fn, P,
             opacity=0.3, row=1, col=2,
           )
           fig.add_shape(type="rect",
-            x0=-loss_fn.margin, y0=height*height, x1=0, y1=0,
+            x0=-loss_fn.margin, y0=height, x1=0, y1=0,
             line=dict(
                 color="red",
                 width=2,
@@ -127,13 +125,13 @@ def plot_2D_contour(model, loss_fn, P,
   fig.update_traces(opacity=0.75, row=1, col=2)
   model_weights_path = os.path.join("weights", "model_weights.h5")
   model.save_weights(model_weights_path)
-  if plot_wandb and save_file:
+  if plot_wandb:
     import wandb
     filename = f"images/contour.png"
     fig.write_image(filename)
     wandb.save(filename)
     wandb.save(model_weights_path)
-  return fig
+  fig.show()
 
 def plot_imgs_grid(batch, filename,
                   num_rows=2, num_cols=8,
@@ -143,7 +141,8 @@ def plot_imgs_grid(batch, filename,
   """Plot a batch of images on a grid."""
   to_plot = num_rows * num_cols
   fig = make_subplots(rows=num_rows, cols=num_cols, x_title=filename.split(".")[0])
-  images = batch[:to_plot]
+  batch = batch.numpy() if isinstance(batch, tf.Tensor) else batch
+  images = np.concatenate([batch[0::2], batch[1::2]], axis=0)[:to_plot]  # interleave for better viz.
   for i, img in enumerate(images):
     row = i // num_cols + 1
     col = i %  num_cols + 1
@@ -155,34 +154,33 @@ def plot_imgs_grid(batch, filename,
     filename = os.path.join("images", filename)
     fig.write_image(filename)
     wandb.save(filename)
-  return fig
+  fig.show()
 
-def plot_gan(epoch, model, P, Q0, gen, maxiter, *, save_file=False, **kwargs):
+def plot_gan(epoch, model, P, Q0, gen, maxiter, *, save_file=False, plot_wandb=True, **kwargs):
   """Plot the GAN adversarial samples, the negative data augmentation, along original images."""
-  deterministic = kwargs.get("deterministic", False)
-  kwargs = {k:v for (k,v) in kwargs.items() if k not in ['log_metrics_fn', 'deterministic']}
-  _ = model(P[:8], training=True)  # cache computations using fake batch of small size.
-  y_P = model.predict(P)
-  level_set = float(tf.reduce_mean(y_P))
-  Qt   = newton_raphson(model, Q0, gen, maxiter=maxiter,     level_set=0,         deterministic=deterministic, **kwargs)
-  Qinf = newton_raphson(model, Q0, gen, maxiter=maxiter*100, level_set=level_set, deterministic=True,          **kwargs)
+  _ = model(P[:8], training=True)  # cache computations of (u, sigma) using fake batch of small size.
+  y_P = model.predict(P, batch_size=256, verbose=1)
+  quantile = 0.5
+  avg_P = float(np.quantile(y_P.flatten(), q=quantile))
+  keys = ['deterministic', 'level_set', 'overshoot_boundary', 'eta', 'domain']
+  kwargs = {k:v for (k,v) in kwargs.items() if k in keys}
+  Qt   = newton_raphson(model, Q0, gen, maxiter=maxiter, **kwargs)
+  kwargs = {k:v for (k,v) in kwargs.items() if k not in ['deterministic', 'level_set']}
+  Qinf = newton_raphson(model, Q0, gen, maxiter=maxiter*100, level_set=avg_P, deterministic=True, **kwargs)
   y_Q0    = model.predict(Q0)
   y_Qt    = model.predict(Qt)
   y_Qinf  = model.predict(Qinf)
   print(f"P={y_P.mean()} y_Q0={y_Q0.mean()}  y_Qt={y_Qt.mean()} y_Qinf={y_Qinf.mean()}")
-  fig = plot_imgs_grid(Q0, f'y_Q0_{epoch}.png', save_file=save_file)
-  fig.show()
-  fig = plot_imgs_grid(Qt, f'y_Qt_{epoch}.png', save_file=save_file)
-  fig.show()
-  fig = plot_imgs_grid(Qinf,  f'y_Qinf_{epoch}.png', save_file=save_file)
-  fig.show()
+  plot_imgs_grid(Q0, f'Q0_{epoch}.png', save_file=save_file, plot_wandb=plot_wandb)
+  plot_imgs_grid(Qt, f'Qt_{epoch}.png', save_file=save_file, plot_wandb=plot_wandb)
+  plot_imgs_grid(Qinf,  f'Qinf_{epoch}.png', save_file=save_file, plot_wandb=plot_wandb)
 
-def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False, plot_wandb=True, save_file=True):
+def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False, plot_wandb=True):
   """Plot the predictions of the model on the in-distribution and out-of-distribution data."""
   _          = model(X_train[:8], training=True)  # cache computations using fake batch of small size.
-  y_train    = model.predict(X_train).flatten()
-  y_test     = model.predict(X_test).flatten()
-  y_ood      = model.predict(X_ood).flatten()
+  y_train    = model.predict(X_train, batch_size=256, verbose=1).flatten()
+  y_test     = model.predict(X_test, batch_size=256, verbose=1).flatten()
+  y_ood      = model.predict(X_ood, batch_size=256, verbose=1).flatten()
   r_train    = stats.describe(y_train, axis=None)
   r_test     = stats.describe(y_test, axis=None)
   r_ood      = stats.describe(y_ood, axis=None)
@@ -195,10 +193,17 @@ def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False
   print(f"[train/ood] ROC-AUC ={roc_auc_train:.3f}")
   print(f"[test /ood] Avg Dist ={r_test.mean-r_ood.mean} T={T_test:.3f} Acc={acc_test:.2f}%")
   print(f"[test /ood] ROC-AUC ={roc_auc_test:.3f}")
+  model_weights_path = os.path.join("weights", "model_weights.h5")
+  model.save_weights(model_weights_path)
+  if plot_wandb:
+    import wandb
+    wandb.log({'roc_auc_train': roc_auc_train, 'T_acc_train': acc_train})
+    wandb.log({'roc_auc_test' : roc_auc_test, 'T_acc_test': acc_test})
+    wandb.save(model_weights_path)
   if plot_histogram:
     df = pd.DataFrame({'distribution' : ['train'] * len(y_train) + ['test'] * len(y_test) + ['ood'] * len(y_ood),
                         'score'        : np.concatenate([y_train, y_test, y_ood], axis=0)})
-    frac = 0.05
+    frac = 0.1  # plot 10% of input data (~1000 examples).
     df = df.sample(frac=frac, axis=0)  # produce histogram with small part of input data.
     fig = px.histogram(df, x="score", color="distribution", hover_data=df.columns, 
                         histnorm='density', marginal="rug",  # can be `box`, `violin`
@@ -211,12 +216,10 @@ def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False
     fig.show()
     if plot_wandb:
       import wandb
-      wandb.log({'roc_auc_train': roc_auc_train, 'T_acc_train': acc_train})
-      wandb.log({'roc_auc_test' : roc_auc_test, 'T_acc_test': acc_test})
-      if save_file and epoch%10 == 0:
-          filename = os.path.join("images", f"ood_histogram_{epoch}.png")
-          fig.write_image(filename)
-          wandb.save(filename)
+      filename = os.path.join("images", f"ood_histogram_{epoch}.png")
+      fig.write_image(filename)
+      wandb.save(filename)
+      
 
 def display_levelset_binary(model, X, levels=20, coeff=1.1):
   """Display the level set of the model on the binary classification problem.
@@ -257,14 +260,14 @@ def display_levelset_binary(model, X, levels=20, coeff=1.1):
 
   grid_x_ticks = np.arange(x_min, x_max, 0.2)
   grid_y_ticks = np.arange(y_min, y_max, 0.2)
-  #ax1.set_ticks_position('both')
+  # ax1.set_ticks_position('both')
   ax1.set_xticks(grid_x_ticks , minor=True)
   ax1.set_yticks(grid_y_ticks , minor=True)
-  #ax1.grid(which='both')
+  # ax1.grid(which='both')
   ax1.grid(True, 'major', ls='solid', lw=0.5, color='gray')
   ax1.grid(True, 'minor', ls='solid', lw=0.2, color='gray')
-  #ax1.set_minor_locator(mpl.ticker.AutoMinorLocator())
-  #ax1.grid(which='minor', alpha=0.3)
+  # ax1.set_minor_locator(mpl.ticker.AutoMinorLocator())
+  # ax1.grid(which='minor', alpha=0.3)
   # ax2 = fig.add_subplot(312)
   # ax3 = fig.add_subplot(313)
   sns.scatterplot(x=X[:, 0],y=X[:, 1], color=sns.color_palette()[0], alpha=0.2, ax=ax1)

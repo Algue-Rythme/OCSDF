@@ -3,3 +3,5 @@
 wandb/
 weights/
 images/
+ocml.egg-info/
+experiments/*.py

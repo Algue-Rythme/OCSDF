@@ -16,7 +16,7 @@ class SH_KR:
     """
     return  tf.nn.relu(self.margin - y) + (1./self.lbda) * tf.reduce_mean(-y)
 
-class BCE():  # fake cross-entropy loss with useless `margin` parameter for adversarial generation.
+class BCE():
   def __call__(self, y):
     """Return loss.
     
@@ -110,9 +110,9 @@ def newton_raphson(model,
       Qt = Q_next
     
     if infos:
-      grad_norm = float(tf.reduce_mean(grad_norm_squared**0.5))
+      grad_norm = tf.reduce_mean(grad_norm_squared**0.5)
       lipschitz_ratio = compute_batch_norm(Qt - Q0) / (tf.reshape(tf.abs(y_Q0), (-1,)+tuple((1,)*(Qt.shape.ndims-1)))+1e-2)
-      lipschitz_ratio = float(tf.reduce_mean(lipschitz_ratio**0.5))
+      lipschitz_ratio = tf.reduce_mean(lipschitz_ratio**0.5)
       return Qt, (y_Q0, grad_norm, lipschitz_ratio)
     return Qt
 
@@ -190,3 +190,4 @@ def train(model, opt, loss_fn, gen, P_ds, Q_ds, epoch_length, *,
       losses.append(loss.numpy())
       log_metrics_fn(pb, losses, infos)  # update metrics in tqdm.
       pb.update()
+  pb.close()

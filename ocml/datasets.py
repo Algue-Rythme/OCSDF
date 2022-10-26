@@ -72,9 +72,9 @@ def filter_labels(white_list):
     return tf.math.reduce_any(tf.equal(label, white_list))
   return filter_fun
 
-def build_mnist(batch_size, in_labels, split='train'):
+def build_mnist(ds_name, batch_size, in_labels, split='train'):
   """Convert Mnist dataset into iterable tf.Dataset."""
-  ds = tfds.load('mnist', split='test' if split == 'ood' else split, as_supervised=True, shuffle_files=True)
+  ds = tfds.load(ds_name, split='test' if split == 'ood' else split, as_supervised=True, shuffle_files=True)
   if split in ['train', 'test'] :
     label_set = in_labels
   elif split == 'ood':
@@ -87,12 +87,12 @@ def build_mnist(batch_size, in_labels, split='train'):
   ds = ds.batch(batch_size).prefetch(4)
   return ds
 
-def build_tf_from_tfds(ds):
+def tf_from_tfds(ds):
   """Build a numpy dataset from a tf.Dataset."""
   X = tf.concat([batch for batch in ds], axis=0)
   return X
 
-def ds_from_sampler(sampler, gen, batch_size, input_shape, **kwargs):
+def tfds_from_sampler(sampler, gen, batch_size, input_shape, **kwargs):
   def generator():
     while True:
       yield sampler(gen, batch_size, input_shape, **kwargs)

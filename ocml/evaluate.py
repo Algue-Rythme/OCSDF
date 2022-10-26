@@ -15,7 +15,6 @@ from deel.lip.activations import PReLUlip, GroupSort, FullSort
 from tensorflow.keras.layers import InputLayer, Dense, Conv2D
 from deel.lip.normalizers import reshaped_kernel_orthogonalization
 
-from ocml.layers import infinity_norm_normalization, two_to_infinity_norm_normalization
 from ocml.layers import NormalizedDense, NormalizedConv2D
 
 
@@ -161,18 +160,18 @@ def log_metrics(pb, losses, infos, plot_wandb=True):
     plot_wandb: whether to plot on wandb.
   """
   y_Qt, y_P, y_Q0, GN_Qt, lipschitz_ratio = infos
-  y_neg_P = tf.constant(-1.)  # TODO: fix this hack.
-  recall = tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.float32))
-  false_positive = tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.float32))
-  GN_Qt = float(GN_Qt.numpy())
+  recall = float(tf.reduce_mean(tf.cast(y_P > 0., dtype=tf.float32)).numpy())
+  false_positive = float(tf.reduce_mean(tf.cast(y_Qt > 0., dtype=tf.float32)).numpy())
+  to_float = lambda t: float(t.numpy().mean())
+  y_Qt, y_P, y_Q0, GN_Qt, lipschitz_ratio = tuple(map(to_float, infos))
   pb.set_postfix(R=f'{recall:.2f}%', FP=f'{false_positive:.2f}%',
-                  loss=f'{float(np.array(losses).mean()):.3f}',
-                  GN_Qt=f'{GN_Qt:.3f}', lipschitz_ratio=f'{float(lipschitz_ratio):.3f}',
-                  Qt=f'{float(y_Qt.numpy().mean()):.3f}', P=f'{float(y_P.numpy().mean()):.3f}',
-                  Q0=f'{float(y_Q0.numpy().mean()):.3f}', neg_P=f'{float(y_neg_P.numpy().mean()):.3f}')
+                  loss=f'{float(np.array(losses).mean()):.3f}',  # in tqdm the average is easier to monitor.
+                  GN_Qt=f'{GN_Qt:.3f}', lipschitz_ratio=f'{lipschitz_ratio:.3f}',
+                  Qt=f'{y_Qt:.3f}', P=f'{y_P:.3f}',
+                  Q0=f'{y_Q0:.3f}')
   if plot_wandb:
     import wandb
-    wandb.log({'R':recall, 'FP':false_positive, 'loss':losses[-1],
+    wandb.log({'R':recall, 'FP':false_positive,
+                'loss':losses[-1],  # on Wandb it is better to log the last value and average later.
                 'GN_Qt':GN_Qt, 'lipschitz_ratio':lipschitz_ratio,
-                'Qt' :float(y_Qt.numpy().mean()), 'P':float(y_P.numpy().mean()),
-                'Q0':float(y_Q0.numpy().mean()), 'neg_P' :float(y_neg_P.numpy().mean())})
+                'Qt' :y_Qt, 'P':y_P, 'Q0':y_Q0})

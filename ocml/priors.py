@@ -7,7 +7,11 @@ from functools import partial
 import tensorflow as tf
 import numpy as np
 
-from perlin_noise import PerlinNoise
+try:
+  from perlin_numpy import generate_perlin_noise_2d
+except ImportError as e:
+  print("Perlin noise not available. Please install perlin_numpy package with `pip3 install git+https://github.com/pvigier/perlin-numpy`.")
+  pass
 
 
 def compute_batch_norm(vec):
@@ -53,31 +57,24 @@ def uniform_image(gen, batch_size, input_shape, domain, *, sample_corners=False)
     seeds = tf.math.sign(seeds)
   return seeds
 
-def perlin_noise(gen, batch_size, input_shape, *, octaves):
+def perlin_noise(gen, batch_size, input_shape, *, res=4):
   """Return a batch of images sampled from Perlin noise.
   
   Args:
     gen: tf.random.Generator for reproducibility and speed.
     batch_size: B.
     input_shape: tuple corresponding to the shape of the input (H, W, 1).
-    octaves: number of octaves of Perlin noise.
+    res: resolution of the Perlin noise.
     
   Return:
     tensor of shape (B, H, W, 1).
   """
-  seeds = int(gen.uniform_full_int((batch_size,)))
   height, width = input_shape[0], input_shape[1]
-  heights = np.linspace(height)
-  widths = np.linspace(width)
-  heights, widths = np.meshgrid(heights, widths)
-  coords = list(zip(heights, widths))
   images = []
-  for seed in seeds:
-    noise = PerlinNoise(octaves=octaves, seed=seed)
-    img = [noise(coord) for coord in coords]
-    img = np.array(img).reshape((height, width, 1))
-    images.append(img)
-  images = np.stack(images)
+  for _ in range(batch_size):
+    img = generate_perlin_noise_2d((height, width), (res, res))
+    images.append(img[..., np.newaxis])
+  images = np.stack(images, axis=0)
   return tf.constant(images, dtype=tf.float32)
 
 
