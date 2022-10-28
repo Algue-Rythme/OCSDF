@@ -165,8 +165,8 @@ def plot_gan(epoch, model, P, Q0, gen, maxiter, *, save_file=False, plot_wandb=T
   keys = ['deterministic', 'level_set', 'overshoot_boundary', 'eta', 'domain']
   kwargs = {k:v for (k,v) in kwargs.items() if k in keys}
   Qt   = newton_raphson(model, Q0, gen, maxiter=maxiter, **kwargs)
-  kwargs = {k:v for (k,v) in kwargs.items() if k not in ['deterministic', 'level_set']}
-  Qinf = newton_raphson(model, Q0, gen, maxiter=maxiter*100, level_set=avg_P, deterministic=True, **kwargs)
+  kwargs = {k:v for (k,v) in kwargs.items() if k not in ['level_set', 'deterministic', 'overshoot_boundary']}
+  Qinf = newton_raphson(model, Q0, gen, maxiter=maxiter*100, level_set=avg_P, deterministic=True, overshoot_boundary=True, **kwargs)
   y_Q0    = model.predict(Q0)
   y_Qt    = model.predict(Qt)
   y_Qinf  = model.predict(Qinf)
