@@ -149,14 +149,15 @@ def plot_imgs_grid(batch, filename,
     img = np.concatenate((img,)*3, axis=-1) * 255
     trace = go.Image(z=img, zmax=(255,255,255,255), zmin=(-255,-255,-255,-255), colormodel="rgb")
     fig.add_trace(trace, row=row, col=col)
-  if save_file and plot_wandb:
-    import wandb
+  if save_file:
     filename = os.path.join("images", filename)
     fig.write_image(filename)
-    wandb.save(filename)
+    if plot_wandb:
+      import wandb
+      wandb.save(filename)
   fig.show()
 
-def plot_gan(epoch, model, P, Q0, gen, maxiter, *, save_file=False, plot_wandb=True, **kwargs):
+def plot_gan(epoch, model, P, Q0, gen, maxiter, *, save_file=True, plot_wandb=True, **kwargs):
   """Plot the GAN adversarial samples, the negative data augmentation, along original images."""
   _ = model(P[:8], training=True)  # cache computations of (u, sigma) using fake batch of small size.
   y_P = model.predict(P, batch_size=256, verbose=1)
