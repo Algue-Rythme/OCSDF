@@ -142,7 +142,8 @@ def plot_imgs_grid(batch, filename,
   to_plot = num_rows * num_cols
   fig = make_subplots(rows=num_rows, cols=num_cols, x_title=filename.split(".")[0])
   batch = batch.numpy() if isinstance(batch, tf.Tensor) else batch
-  images = np.concatenate([batch[0::2], batch[1::2]], axis=0)[:to_plot]  # interleave for better viz.
+   # shuffle before plot to see diversity.
+  images = np.random.permutation(batch)[:to_plot] 
   for i, img in enumerate(images):
     row = i // num_cols + 1
     col = i %  num_cols + 1

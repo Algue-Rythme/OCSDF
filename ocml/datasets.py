@@ -102,5 +102,5 @@ def tfds_from_sampler(sampler, gen, batch_size, input_shape, **kwargs):
 
 def zip_ds(*ds):
   zipped = tf.data.Dataset.zip(ds)
-  full_batch = zipped.map(partial(tf.concat, axis=0), zipped)
+  full_batch = zipped.map(lambda *t: tf.concat(t, axis=0))
   return full_batch

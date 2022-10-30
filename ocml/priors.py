@@ -107,23 +107,29 @@ class Mnist_NDA(NegativeDataAugmentation):
     noise: float, standard deviation of the noise.
     domain: tuple of two tensors of shape (F,) corresponding to the lower and upper bounds of the domain. Or tuple of two floats.
   """
-  noise: float = 0.1
+  batch_size: int
+  input_shape: tuple
+  noise: float = 0.2
   domain: tuple = (-1., 1.)
+
+  def __post_init__(self):
+    self.batch_shape = (self.batch_size,) + self.input_shape
 
   def transform(self, gen, ds):
     def affine(gen, batch):
-      batch = tf.image.rot90(batch, k=gen.uniform_full_int(shape=(1,), minval=0, maxval=4))
+      k = np.random.randint(0, 4)
+      batch = tf.image.rot90(batch, k=k)
       batch = tf.image.random_flip_left_right(batch)
       batch = tf.image.random_flip_up_down(batch)
       return batch
 
     def salt_and_pepper(gen, batch):
-      img = gen.normal(shape=batch.shape)
+      img = gen.normal(shape=self.batch_shape)
       img = img * self.noise * (self.domain[1] - self.domain[0])
       return img
 
     def aug(batch):
-      other = tf.random.shuffle(batch, seed=gen)
+      other = tf.random.shuffle(batch)
       other = affine(gen, other)
       batch = affine(gen, batch)
       t = gen.uniform(shape=(1,), minval=0., maxval=1.)
