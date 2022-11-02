@@ -109,7 +109,7 @@ class Mnist_NDA(NegativeDataAugmentation):
   """
   batch_size: int
   input_shape: tuple
-  noise: float = 0.2
+  noise: float = 0.1
   domain: tuple = (-1., 1.)
 
   def __post_init__(self):
@@ -117,8 +117,10 @@ class Mnist_NDA(NegativeDataAugmentation):
 
   def transform(self, gen, ds):
     def affine(gen, batch):
-      k = np.random.randint(0, 4)
-      batch = tf.image.rot90(batch, k=k)
+      ks = np.random.randint(0, 4, size=self.batch_size)
+      imgs = tf.unstack(batch, axis=0)
+      batch = [tf.image.rot90(img, k=k) for img, k in zip(imgs, ks)]
+      batch = tf.stack(batch, axis=0)
       batch = tf.image.random_flip_left_right(batch)
       batch = tf.image.random_flip_up_down(batch)
       return batch
@@ -132,11 +134,13 @@ class Mnist_NDA(NegativeDataAugmentation):
       other = tf.random.shuffle(batch)
       other = affine(gen, other)
       batch = affine(gen, batch)
-      t = gen.uniform(shape=(1,), minval=0., maxval=1.)
+      t = gen.uniform(shape=(1,), minval=0.25, maxval=0.75)
       mixed = t * batch + (1-t) * other
       salt = salt_and_pepper(gen, batch)
       mixed = mixed + salt
       mixed = tf.clip_by_value(mixed, self.domain[0], self.domain[1])
       return mixed
 
-    return ds.map(aug, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    py_aug = lambda x: tf.py_function(aug, inp=[x], Tout=tf.float32)
+
+    return ds.map(py_aug, num_parallel_calls=tf.data.experimental.AUTOTUNE)

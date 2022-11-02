@@ -7,5 +7,5 @@
 jupyter nbconvert --to=script --output-dir=experiments/ ./run_tabular.ipynb
 for i in `seq 1 $1`; do
   echo "Run experiment n°$i from script $0"
-  PLOTLY_RENDERER=png WANDB_GROUP=$2 python experiments/run_tabular.py
+  PLOTLY_RENDERER=png DATASET_NAME=mammography WANDB_GROUP=$2 python experiments/run_tabular.py
 done

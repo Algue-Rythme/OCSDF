@@ -55,33 +55,33 @@ def spectral_VGG(input_shape,
   return model
 
 
-def spectral_VGG_V2(input_shape, k_coef_lip=1.):
+def spectral_VGG_V2(input_shape, k_coef_lip=1., scale=1):
   layers = [InputLayer(input_shape)]
   activation = GroupSort2
   window_size = (3, 3)
   layers = [
-    SpectralConv2D(64, window_size),
+    SpectralConv2D(64*scale, window_size),
     activation(),
-    SpectralConv2D(64, window_size),
+    SpectralConv2D(64*scale, window_size),
     activation(),
-    SpectralConv2D(64, window_size),
+    SpectralConv2D(64*scale, window_size),
     activation(),
-    SpectralConv2D(64, window_size),
+    SpectralConv2D(64*scale, window_size),
     ScaledAveragePooling2D((2, 2)),
-    SpectralConv2D(128, window_size),
+    SpectralConv2D(128*scale, window_size),
     activation(),
-    SpectralConv2D(128, window_size),
+    SpectralConv2D(128*scale, window_size),
     activation(),
-    SpectralConv2D(128, window_size),
+    SpectralConv2D(128*scale, window_size),
     activation(),
-    SpectralConv2D(128, window_size),
+    SpectralConv2D(128*scale, window_size),
     activation(),
     ScaledAveragePooling2D((2, 2)),
-    SpectralConv2D(256, window_size),
+    SpectralConv2D(256*scale, window_size),
     activation(),
-    SpectralConv2D(256, window_size),
+    SpectralConv2D(256*scale, window_size),
     activation(),
-    SpectralConv2D(256, window_size),
+    SpectralConv2D(256*scale, window_size),
     activation(),
     ScaledGlobalAveragePooling2D(),
     NormalizedDense(1, normalizer='2-inf')
