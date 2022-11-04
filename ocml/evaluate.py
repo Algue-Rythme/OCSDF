@@ -1,9 +1,10 @@
 """Utility functions to evaluate and calibrate a model."""
 
 import numpy as np
+import pandas as pd
 import tensorflow as tf
-import scipy 
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, f1_score
+import scipy
 
 import matplotlib.pyplot as plt
 
@@ -130,11 +131,13 @@ def check_empirical_LLC(model, seeds, plot_wandb):
 
   plt.show()
 
+
 def check_LLC(model, seeds, plot_wandb, condense=False):
   check_formal_LLC(model, plot_wandb, condense=condense)
   check_empirical_LLC(model, seeds, plot_wandb)
 
-def calibrate(y_pos, y_neg):
+
+def calibrate_accuracy(y_pos, y_neg):
   """Calibrate the model on the test set."""
   y = np.concatenate([y_neg, y_pos], axis=0)
   labels = np.concatenate([np.zeros_like(y_neg), np.ones_like(y_pos)])
@@ -149,6 +152,7 @@ def calibrate(y_pos, y_neg):
   acc = (scores[idx_max] / len(scores)) * 100
   T = y_sorted[idx_max]
   return T, acc, roc_auc
+
 
 def log_metrics(pb, losses, infos, plot_wandb=True):
   """Plot useful metrics.
@@ -175,3 +179,92 @@ def log_metrics(pb, losses, infos, plot_wandb=True):
                 'loss':losses[-1],  # on Wandb it is better to log the last value and average later.
                 'GN_Qt':GN_Qt, 'lipschitz_ratio':lipschitz_ratio,
                 'Qt' :y_Qt, 'P':y_P, 'Q0':y_Q0})
+
+
+def compute_precision_recall(ytest, yanomalies, T):
+  """Compute precision and recall.
+  in: in-class.
+  out: anomalies.
+  """
+  pred_normal = ytest >= T
+  pred_anomalies = yanomalies < T
+  tp = pred_anomalies.sum()  # true anomaly spoted ! accept anomaly.
+  tn = pred_normal.sum()  # true normal spoted ! reject anomaly.
+  fn = len(yanomalies) - tp  # it was anomalous... yet it was not spoted.
+  fp = len(ytest) - tn  # it was normal... yet it was spoted as anomaly.
+  recall_an = tp / (tp + fn + 1e-8) * 100  # TPR True Positive Rate, Recall, Sensivity
+  recall_no = tn / (tn + fp + 1e-8) * 100  # TNR=1-FPR True Negative Rate, Specificity, Selectivity 
+  precision_an = tp / (tp + fp + 1e-8) * 100  # PPV Predictive Position Value, Precision
+  precision_no = tn / (tn + fn + 1e-8) * 100  # FDR False Discovery Rate
+  preds = pred_normal, pred_anomalies
+  precision_recall = (recall_an, recall_no, precision_an, precision_no)
+  return preds, precision_recall, T
+
+
+def seek_threshold_tabular(ytest, yanomalies, protocol='recall95'):
+  """
+  Protocols:
+  
+    r=pOC: Apply protocol of HRN to make precision=recall=F1 at One Class.
+    r=pOC: Apply protocol of TQM to make precision=recall=F1 on anomalies.
+    recall95OC: Apply protocol for 95% recall at One Class.
+    recall95AD: Apply protocol for 95% recall on anomalies.
+  """
+  a = min(ytest.min(), yanomalies.min())
+  b = max(ytest.max(), yanomalies.max())
+  def fun(T):
+    preds, precision_recall, T = compute_precision_recall(ytest, yanomalies, T)
+    recall_an, recall_no, precision_an, precision_no = precision_recall
+    if protocol == 'recall95OC':
+      return recall_no - 95
+    elif protocol == 'recall95AD':
+      return recall_an - 95
+    elif protocol == 'r=pOC':
+      return recall_no - precision_no
+    elif protocol == 'r=pAD':
+      return recall_an - precision_an
+  T = scipy.optimize.bisect(fun, a, b)
+  return T
+
+
+def evaluate_tabular(epoch, model, xtest, anomalies, manual_threshold=None, plot_wandb=True):
+    test_size, anomalies_size = len(xtest), len(anomalies)
+    xx = np.concatenate([xtest, anomalies], axis=0)
+    _ = model(anomalies, training=True) # garbage-in to apply bjorck projection automatically.
+    yy = model.predict(xx, verbose=1, batch_size=2048).flatten()
+    ytest, yanomalies = np.split(yy, indices_or_sections=[test_size])
+    mean_in, std_in = ytest.mean(), ytest.std()
+    mean_out, std_out = yanomalies.mean(), yanomalies.std()
+    print(f"Mean-In={mean_in:.2f}±{std_in:.2f} Mean-Out={mean_out:.2f}±{std_out:.2f}")
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', 1000)
+    percentiles = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    trainstats = pd.DataFrame(ytest).describe(percentiles).transpose()
+    teststats = pd.DataFrame(yanomalies).describe(percentiles).transpose()
+    stats = pd.concat([trainstats,teststats], ignore_index=True).round(4)
+    stats.index = ['test','anomalies']
+    if (epoch+1)%5== 0:
+      print(stats)
+    true_labels = np.concatenate([np.zeros(test_size), np.ones(anomalies_size)], axis=0)
+    roc_auc = roc_auc_score(true_labels, -yy) * 100.  # swap snormality <=> anormality score !
+    print(f"AUROC={roc_auc:.2f}")
+    protocols = ['r=pOC', 'r=pAD', 'recall95OC', 'recall95AD']
+    for protocol in protocols:
+      if manual_threshold is None:
+        threshold = seek_threshold_tabular(ytest, yanomalies, protocol)
+      else:
+        threshold = manual_threshold
+      preds, precision_recall, threshold = compute_precision_recall(ytest, yanomalies, threshold)
+      pred_normal, pred_anomalies = preds
+      recall_an, recall_no, precision_an, precision_no = precision_recall
+      pred_yy = np.concatenate([1-pred_normal, pred_anomalies], axis=0)
+      f1 = f1_score(true_labels, pred_yy) * 100
+      f1_rev = f1_score(1-true_labels, 1-pred_yy) * 100  # F1-score is not symmetric: we monitore both directions.
+      if len(protocols) == 1:
+        print(f"False-Alarm={100-recall_no:.2f}%")
+      print(f"[{protocol}] Recall-Anomalies={recall_an:.2f} Precision-Anomaly={precision_an:.2f}% Precision-Normal={precision_no:.2f}% Recall-Normal={recall_no:.2f}%")
+      print(f"[{protocol}] F1={f1:.2f} F1-rev={f1_rev:.2f} T={threshold:.4f} ")
+      if plot_wandb:
+        import wandb
+        wandb.log({'protocol':protocol, 'roc_auc': roc_auc, 'recall':recall_an, 'precision':precision_an, 'f1':f1, 'f1_rev':f1_rev, 'T':threshold})
+    return threshold

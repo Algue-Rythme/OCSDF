@@ -60,8 +60,12 @@ def load_toy_2d(name, num_pts, noise):
   ds_fun = datasets[name]
   return ds_fun()  # create dataset as numpy array.
 
-def preprocess_image(image, label):
+def preprocess_image(image, label, domain):
   """Renormalize images in suitable range."""
+  image = tf.cast(image, tf.float32) / 255.  # [0, 1] range
+  domain_range = domain[1] - domain[0] 
+  image = image * domain_range # [0, 1] -> [0, domain_range]
+  image = image - domain_range*0.5 # [0, domain_range] -> [-domain_range/2, domain_range/2]
   image = (tf.cast(image, dtype=tf.float32) / 255.0 * 2) - 1
   return image
 
@@ -72,7 +76,7 @@ def filter_labels(white_list):
     return tf.math.reduce_any(tf.equal(label, white_list))
   return filter_fun
 
-def build_mnist(ds_name, batch_size, in_labels, split='train'):
+def build_mnist(ds_name, batch_size, in_labels, domain, split='train'):
   """Convert Mnist dataset into iterable tf.Dataset."""
   ds = tfds.load(ds_name, split='test' if split == 'ood' else split, as_supervised=True, shuffle_files=True)
   if split in ['train', 'test'] :
@@ -80,7 +84,7 @@ def build_mnist(ds_name, batch_size, in_labels, split='train'):
   elif split == 'ood':
     label_set = list(set(range(0, 10)).difference(in_labels))
   ds = ds.filter(filter_labels(label_set))
-  ds = ds.map(preprocess_image)
+  ds = ds.map(partial(preprocess_image, domain=domain))
   to_shuffle = 2
   if split == 'train':
     ds = ds.repeat().shuffle(to_shuffle*batch_size)  # always repeat a dataset

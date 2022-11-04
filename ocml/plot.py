@@ -11,7 +11,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import plotly.express as px
 
-from ocml.evaluate import calibrate
+from ocml.evaluate import calibrate_accuracy
 from ocml.train import newton_raphson
 
 
@@ -177,7 +177,7 @@ def plot_gan(epoch, model, P, Q0, gen, maxiter, *, save_file=True, plot_wandb=Tr
   plot_imgs_grid(Qt, f'Qt_{epoch}.png', save_file=save_file, plot_wandb=plot_wandb)
   plot_imgs_grid(Qinf,  f'Qinf_{epoch}.png', save_file=save_file, plot_wandb=plot_wandb)
 
-def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False, plot_wandb=True):
+def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False, plot_wandb=True, T=None):
   """Plot the predictions of the model on the in-distribution and out-of-distribution data."""
   _          = model(X_train[:8], training=True)  # cache computations using fake batch of small size.
   y_train    = model.predict(X_train, batch_size=256, verbose=1).flatten()
@@ -189,12 +189,12 @@ def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False
   print(f"Train examples {r_train}")
   print(f"Test examples {r_test}")
   print(f"OOD examples {r_ood}")
-  T_train, acc_train, roc_auc_train = calibrate(y_train, y_ood)
-  T_test, acc_test, roc_auc_test = calibrate(y_test, y_ood)
+  T_train, acc_train, roc_auc_train = calibrate_accuracy(y_train, y_ood)
+  T_test, acc_test, roc_auc_test = calibrate_accuracy(y_test, y_ood)
   print(f"[train/ood] Avg Dist={r_train.mean-r_ood.mean:.3f} T={T_train:.3f} Acc={acc_train:.2f}%")
-  print(f"[train/ood] ROC-AUC ={roc_auc_train:.3f}")
+  print(f"[train/ood] AUROC ={roc_auc_train:.3f}")
   print(f"[test /ood] Avg Dist ={r_test.mean-r_ood.mean} T={T_test:.3f} Acc={acc_test:.2f}%")
-  print(f"[test /ood] ROC-AUC ={roc_auc_test:.3f}")
+  print(f"[test /ood] AUROC ={roc_auc_test:.3f}")
   model_weights_path = os.path.join("weights", "model_weights.h5")
   model.save_weights(model_weights_path)
   if plot_wandb:
@@ -205,12 +205,18 @@ def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False
   if plot_histogram:
     df = pd.DataFrame({'distribution' : ['train'] * len(y_train) + ['test'] * len(y_test) + ['ood'] * len(y_ood),
                         'score'        : np.concatenate([y_train, y_test, y_ood], axis=0)})
-    frac = 0.1  # plot 10% of input data (~1000 examples).
-    df = df.sample(frac=frac, axis=0)  # produce histogram with small part of input data.
+    if len(df) >= 1e3:
+      frac = 1e3 / len(df)  # plot at most 1e3 points.
+      df = df.sample(frac=frac, axis=0)  # produce histogram with small part of input data.
+    else:
+      frac = 1.0
     fig = px.histogram(df, x="score", color="distribution", hover_data=df.columns, 
                         histnorm='density', marginal="rug",  # can be `box`, `violin`
                         opacity=0.75)
     height = round(max(len(y_test), len(y_ood) * frac))
+    if T is not None:  #force threshold to predefined value (regardless of calibration on accuracy).
+      T_test = T
+      T_train = T
     fig.add_shape(type="line", x0=T_test, y0=0, x1=T_test, y1=height,
                   line=dict(color="black", width=2))
     fig.add_shape(type="line", x0=T_train, y0=0, x1=T_train, y1=height,

@@ -6,6 +6,10 @@
 
 jupyter nbconvert --to=script --output-dir=experiments/ ./run_tabular.ipynb
 for i in `seq 1 $1`; do
-  echo "Run experiment n°$i from script $0"
-  PLOTLY_RENDERER=png DATASET_NAME=mammography WANDB_GROUP=$2 python experiments/run_tabular.py
+  for ds in thyroid mammography arrhythmia; do
+    for adoc in ad oc; do
+      echo "Run experiment n°$i from script $0 with dataset $ds and protocol $adoc in group ${2}_${ds}_${adoc}"
+      PLOTLY_RENDERER=png DATASET_NAME=$ds ADOC=$adoc WANDB_GROUP=${2}_${ds}_${adoc} python experiments/run_tabular.py
+    done
+  done  
 done
