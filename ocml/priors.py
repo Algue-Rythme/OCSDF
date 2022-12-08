@@ -147,6 +147,32 @@ class Mnist_NDA(NegativeDataAugmentation):
     return ds.map(py_aug, num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
 
+@dataclass
+class Cifar10_NDA(NegativeDataAugmentation):
+  pass
+
+
+def augment_cifar10(ds):
+  """Return a batch of adversarial samples - distribution Q_t in paper.
+  
+  Args:
+    ds: tf.data.Dataset that yields batchs of shape (B, F).
+  
+  Returns:
+      tf.data.Dataset that yields batchs of shape (B, F).
+  """
+  def aug(batch):
+    batch = tf.image.random_flip_left_right(batch)
+    # batch = tf.image.random_flip_up_down(batch)
+    # batch = tf.image.random_brightness(batch, 0.1)
+    # batch = tf.image.random_contrast(batch, lower=0.9, upper=1.1)
+    # batch = tf.image.random_saturation(batch, lower=0.9, upper=1.1)
+    # batch = tf.image.random_hue(batch, 0.1)
+    return batch
+
+  return ds.map(aug, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+
 class Categorical:
   def __init__(self, num_classes):
     self.num_classes = max(num_classes, 2)

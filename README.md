@@ -1,4 +1,4 @@
-## One Class Metric Learning
+## Certifiable One Class Learning
 
 Learn to approximate the Sign Distance Function (SDF) to the boundary of a distribution, i.e a dataset.
 

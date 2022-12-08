@@ -14,6 +14,28 @@ from ocml.layers import NormalizedDense, NormalizedConv2D
 from tensorflow.keras.layers import InputLayer, AveragePooling2D
 
 
+def load_VGG_V2_from_run(entity, project, run_id, model, patch=True):
+  import wandb
+  api = wandb.Api()
+  try:
+    run = api.run(f"{entity}/{project}/{run_id}")
+    prefix = f'downloaded/{project}/run_{run.name}/'
+    run.file("weights/model_weights.h5").download(prefix, replace=True)
+
+    if patch:
+      model.load_weights(f"{prefix}weights/model_weights.h5", by_name=False, skip_mismatch=False)
+      model.layers[-1] = NormalizedDense(1, normalizer='2-inf', V2=True)
+  except OSError as e:
+    print(f"Failed to load {entity}/{project}/{run_id}")
+    raise e
+    
+
+def froze_everything_except_last(model):
+  for layer in model.layers[:-1]:
+    layer.trainable = False
+  model.layers[-1].trainable = True
+
+
 def spectral_VGG(input_shape,
                 conv_widths,
                 dense_widths,
@@ -55,7 +77,7 @@ def spectral_VGG(input_shape,
   return model
 
 
-def spectral_VGG_V2(input_shape, k_coef_lip=1., scale=1):
+def spectral_VGG_V2(input_shape, k_coef_lip=1., scale=1, legacy=False):
   layers = [InputLayer(input_shape)]
   activation = GroupSort2
   window_size = (3, 3)
@@ -84,7 +106,8 @@ def spectral_VGG_V2(input_shape, k_coef_lip=1., scale=1):
     SpectralConv2D(256*scale, window_size),
     activation(),
     ScaledGlobalAveragePooling2D(),
-    NormalizedDense(1, normalizer='2-inf')
+    NormalizedDense(1, normalizer='2-inf', V2=not legacy)
+    # FrobeniusDense(1)
   ]
   model = DeelSequential(layers, k_coef_lip=k_coef_lip)
   return model

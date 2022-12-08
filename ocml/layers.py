@@ -8,6 +8,7 @@ import tensorflow as tf
 from tensorflow.keras import backend as K
 from deel.lip.layers import Condensable, LipschitzLayer, SpectralDense
 from tensorflow.keras.initializers import Orthogonal
+from tensorflow.keras.utils import register_keras_serializable
 import math
 
 
@@ -40,6 +41,7 @@ def two_to_infinity_norm_normalization(kernel, inf_norm_bounds=tf.constant(1.)):
     return wbar
 
 
+@register_keras_serializable("ocml", "NormalizedDense")
 class NormalizedDense(Dense, LipschitzLayer, Condensable):
     def __init__(
         self,
@@ -57,6 +59,7 @@ class NormalizedDense(Dense, LipschitzLayer, Condensable):
         k_coef_lip=1.0,
         inf_norm_bounds=1.0,
         projection=False,
+        V2=True,
         **kwargs
     ):
         super().__init__(
@@ -78,6 +81,8 @@ class NormalizedDense(Dense, LipschitzLayer, Condensable):
         self.normalizer = normalizer
         self.built = False
         self.projection = projection
+        self.wbar = None
+        self.V2 = V2
         if normalizer == 'inf':
             self.normalizer_fun = infinity_norm_normalization
         elif normalizer == '2-inf':
@@ -86,6 +91,14 @@ class NormalizedDense(Dense, LipschitzLayer, Condensable):
     def build(self, input_shape):
         super(NormalizedDense, self).build(input_shape)
         self._init_lip_coef(input_shape)
+        if self.V2:
+            self.wbar = self.add_weight(
+                shape=self.kernel.shape,  # maximum spectral  value
+                initializer=(lambda shape, dtype: self.kernel.read_value()),
+                name="sigma",
+                trainable=False,
+                dtype=self.dtype,
+            )
         self.built = True
 
     def _compute_lip_coef(self, input_shape=None):
@@ -93,11 +106,16 @@ class NormalizedDense(Dense, LipschitzLayer, Condensable):
 
     @tf.function
     def call(self, x, training=True):
-        wbar = self.kernel
         if training:
-            wbar = self.normalizer_fun(wbar, self.inf_norm_bounds)
+            wbar = self.normalizer_fun(self.kernel, self.inf_norm_bounds)  # prediction is made with constrained kernel.
+            if self.V2:
+                self.wbar.assign(wbar)  # TODO
             if self.projection:
                 self.kernel.assign(wbar)
+        elif self.V2:  # TODO
+            wbar = self.wbar
+        else:
+            wbar = self.kernel  # legacy behavior.
         outputs = tf.matmul(x, wbar) * self._get_coef()
         if self.use_bias:
             outputs = tf.nn.bias_add(outputs, self.bias)
@@ -136,6 +154,10 @@ class NormalizedDense(Dense, LipschitzLayer, Condensable):
 
 
 class NormalizedConv2D(Conv2D, LipschitzLayer, Condensable):
+    """Normalized Conv2D layer: warning refactor required.
+    
+    TODO: refactor in V2 version.
+    """
     def __init__(
         self,
         filters,

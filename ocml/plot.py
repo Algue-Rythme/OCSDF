@@ -147,7 +147,13 @@ def plot_imgs_grid(batch, filename,
   for i, img in enumerate(images):
     row = i // num_cols + 1
     col = i %  num_cols + 1
-    img = np.concatenate((img,)*3, axis=-1) * 255
+    if img.shape == (28, 28):
+      img = np.concatenate((img,)*3, axis=-1) * 255
+    else:  # from [-2, 2] to [-255, 255]
+      img = img * np.array([0.24703233, 0.24348505, 0.26158768])  # from [-2, 2] to [-0.5, 0.5]
+      img = img + np.array([0.49139968, 0.48215841, 0.44653091])  # from [-0.5, 0.5] to [0, 1]
+      img = img * 255  # from [0, 1] to [0, 255]
+      img = img * 2 - 255  # from [0, 255] to [-255, 255]
     trace = go.Image(z=img, zmax=(255,255,255,255), zmin=(-255,-255,-255,-255), colormodel="rgb")
     fig.add_trace(trace, row=row, col=col)
   if save_file:
@@ -210,7 +216,9 @@ def plot_preds_ood(epoch, model, X_train, X_test, X_ood, *, plot_histogram=False
       df = df.sample(frac=frac, axis=0)  # produce histogram with small part of input data.
     else:
       frac = 1.0
-    fig = px.histogram(df, x="score", color="distribution", hover_data=df.columns, 
+    fig = px.histogram(df, x="score", color="distribution",
+                        color_discrete_map = {'train': 'blue', 'test': 'green', 'ood': 'red'},
+                        hover_data=df.columns, 
                         histnorm='density', marginal="rug",  # can be `box`, `violin`
                         opacity=0.75)
     height = round(max(len(y_test), len(y_ood) * frac))

@@ -29,7 +29,7 @@ def default_process(X, y):
       X: dataset of shape (N, F) with N the number of samples, F the dimension.
       y: vector of shape (N,) of binary labels.
 
-  Returns:
+  Returns: 
       pre-processed pair (X, y).
   """
   y = 2*y - 1
@@ -60,13 +60,19 @@ def load_toy_2d(name, num_pts, noise):
   ds_fun = datasets[name]
   return ds_fun()  # create dataset as numpy array.
 
-def preprocess_image(image, label, domain):
+def preprocess_mnist(image, label, domain):
   """Renormalize images in suitable range."""
   image = tf.cast(image, tf.float32) / 255.  # [0, 1] range
   domain_range = domain[1] - domain[0] 
   image = image * domain_range # [0, 1] -> [0, domain_range]
   image = image - domain_range*0.5 # [0, domain_range] -> [-domain_range/2, domain_range/2]
-  image = (tf.cast(image, dtype=tf.float32) / 255.0 * 2) - 1
+  return image
+
+def preprocess_cifar10(image, label, domain):
+  """Renormalize images in suitable range."""
+  image = tf.cast(image, tf.float32) / 255.  # [0, 1] range
+  image = image - tf.constant([0.49139968, 0.48215827, 0.44653124], dtype=tf.float32)  # [0, 1] -> [-0.4914, 0.5086] for red channel
+  image = image / tf.constant([0.24703233, 0.24348505, 0.26158768], dtype=tf.float32)  # [-0.4914, 0.5086] -> [-2.0, 2.0] for red channel (approx)
   return image
 
 def filter_labels(white_list):
@@ -76,15 +82,17 @@ def filter_labels(white_list):
     return tf.math.reduce_any(tf.equal(label, white_list))
   return filter_fun
 
-def build_mnist(ds_name, batch_size, in_labels, domain, split='train'):
-  """Convert Mnist dataset into iterable tf.Dataset."""
+def build_ds(ds_name, batch_size, in_labels, domain, split='train', preprocess_fun=None):
+  """Convert dataset from Tf repository into iterable tf.Dataset."""
   ds = tfds.load(ds_name, split='test' if split == 'ood' else split, as_supervised=True, shuffle_files=True)
   if split in ['train', 'test'] :
     label_set = in_labels
   elif split == 'ood':
     label_set = list(set(range(0, 10)).difference(in_labels))
   ds = ds.filter(filter_labels(label_set))
-  ds = ds.map(partial(preprocess_image, domain=domain))
+  if preprocess_fun is None:
+    preprocess_fun = preprocess_mnist
+  ds = ds.map(partial(preprocess_fun, domain=domain))
   to_shuffle = 2
   if split == 'train':
     ds = ds.repeat().shuffle(to_shuffle*batch_size)  # always repeat a dataset

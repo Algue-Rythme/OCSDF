@@ -115,7 +115,7 @@ def check_empirical_LLC(model, seeds, plot_wandb):
     dd_ratio = np.sum(df**2)**0.5 / np.sum(dx**2)**0.5
     df_ratio = np.sum(df**2)**0.5 / np.sum(dd**2)**0.5
     datum = [str(type(layer)), f"{dd_ratio:.2f}", f"{df_ratio:.2f}"]
-    print(i, datum[0], datum[1], datum[2])
+    print(layer.name, i, datum[0], datum[1], datum[2])
     data.append(datum)
   datum = ["Output_Norms", f"{np.sum(df**2)**0.5}", f"{np.sum(df**2)**0.5}"]
   data.append(datum)
