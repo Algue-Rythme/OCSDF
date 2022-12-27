@@ -147,7 +147,7 @@ def plot_imgs_grid(batch, filename,
   for i, img in enumerate(images):
     row = i // num_cols + 1
     col = i %  num_cols + 1
-    if img.shape == (28, 28):
+    if img.shape == (28, 28) or img.shape == (28, 28, 1):
       img = np.concatenate((img,)*3, axis=-1) * 255
     else:  # from [-2, 2] to [-255, 255]
       img = img * np.array([0.24703233, 0.24348505, 0.26158768])  # from [-2, 2] to [-0.5, 0.5]
