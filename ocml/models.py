@@ -17,7 +17,7 @@ SpectralDense = partial(SpectralDense, kernel_initializer="orthogonal")
 SpectralConv2D = partial(SpectralConv2D, kernel_initializer="orthogonal")
 
 
-def load_VGG_V2_from_run(entity, project, run_id, model, patch=True):
+def load_VGG_V2_from_run(entity, project, run_id, model, patch=False):
   import wandb
   api = wandb.Api()
   try:
@@ -28,6 +28,8 @@ def load_VGG_V2_from_run(entity, project, run_id, model, patch=True):
     if patch:
       model.load_weights(f"{prefix}weights/model_weights.h5", by_name=False, skip_mismatch=False)
       model.layers[-1] = NormalizedDense(1, normalizer='2-inf', V2=True)
+    else:
+      model.load_weights(f"{prefix}weights/model_weights.h5")
   except OSError as e:
     print(f"Failed to load {entity}/{project}/{run_id}")
     raise e
