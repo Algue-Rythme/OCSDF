@@ -1,5 +1,5 @@
 """Pre-defined architectures of Lipschitz layers."""
-
+from functools import partial
 import tensorflow as tf
 import tensorflow as tf
 from tensorflow.keras.layers import Flatten, Dense
@@ -12,6 +12,9 @@ from deel.lip.model import Sequential as DeelSequential
 from deel.lip.activations import PReLUlip, FullSort
 from ocml.layers import NormalizedDense, NormalizedConv2D
 from tensorflow.keras.layers import InputLayer, AveragePooling2D
+
+SpectralDense = partial(SpectralDense, kernel_initializer="orthogonal")
+SpectralConv2D = partial(SpectralConv2D, kernel_initializer="orthogonal")
 
 
 def load_VGG_V2_from_run(entity, project, run_id, model, patch=True):
@@ -28,7 +31,7 @@ def load_VGG_V2_from_run(entity, project, run_id, model, patch=True):
   except OSError as e:
     print(f"Failed to load {entity}/{project}/{run_id}")
     raise e
-    
+
 
 def froze_everything_except_last(model):
   for layer in model.layers[:-1]:

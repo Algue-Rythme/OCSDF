@@ -71,8 +71,9 @@ def preprocess_mnist(image, label, domain):
 def preprocess_cifar10(image, label, domain):
   """Renormalize images in suitable range."""
   image = tf.cast(image, tf.float32) / 255.  # [0, 1] range
-  image = image - tf.constant([0.49139968, 0.48215827, 0.44653124], dtype=tf.float32)  # [0, 1] -> [-0.4914, 0.5086] for red channel
-  image = image / tf.constant([0.24703233, 0.24348505, 0.26158768], dtype=tf.float32)  # [-0.4914, 0.5086] -> [-2.0, 2.0] for red channel (approx)
+  if domain is None:
+    image = image - tf.constant([0.49139968, 0.48215827, 0.44653124], dtype=tf.float32)  # [0, 1] -> [-0.4914, 0.5086] for red channel
+    image = image / tf.constant([0.24703233, 0.24348505, 0.26158768], dtype=tf.float32)  # [-0.4914, 0.5086] -> [-2.0, 2.0] for red channel (approx)
   return image
 
 def filter_labels(white_list):

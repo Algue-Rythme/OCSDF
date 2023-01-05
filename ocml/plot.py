@@ -1,9 +1,11 @@
 """Plot with Seaborn, Matplotlib or Plotly useful vizualisations."""
 
+import itertools
 import os
 import math
 
 import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from scipy import stats
@@ -149,9 +151,10 @@ def plot_imgs_grid(batch, filename,
     col = i %  num_cols + 1
     if img.shape == (28, 28) or img.shape == (28, 28, 1):
       img = np.concatenate((img,)*3, axis=-1) * 255
-    else:  # from [-2, 2] to [-255, 255]
-      img = img * np.array([0.24703233, 0.24348505, 0.26158768])  # from [-2, 2] to [-0.5, 0.5]
-      img = img + np.array([0.49139968, 0.48215841, 0.44653091])  # from [-0.5, 0.5] to [0, 1]
+    else:
+      if img.min() < -1 or img.max() > 1:  # from [-2, 2] to [-255, 255]
+        img = img * np.array([0.24703233, 0.24348505, 0.26158768])  # from [-2, 2] to [-0.5, 0.5]
+        img = img + np.array([0.49139968, 0.48215841, 0.44653091])  # from [-0.5, 0.5] to [0, 1]
       img = img * 255  # from [0, 1] to [0, 255]
       img = img * 2 - 255  # from [0, 255] to [-255, 255]
     trace = go.Image(z=img, zmax=(255,255,255,255), zmin=(-255,-255,-255,-255), colormodel="rgb")
@@ -294,3 +297,100 @@ def display_levelset_binary(model, X, levels=20, coeff=1.1):
   ax1.patch.set_edgecolor('black')
   #plt.show()
   return ax1
+
+
+##### 3D visualization #####
+
+
+def plot_3d_plt(points, cloud, anchors, aspect):
+  fig = plt.figure(figsize=(5, 5))
+  ax = fig.add_subplot(111, projection="3d")
+  ax.scatter(points[:, 0], points[:, 1], points[:, 2], c='blue')
+  ax.scatter(cloud[:,0], cloud[:,1], cloud[:,2], c='orange')  
+  if anchors is not None:
+    ax.scatter(anchors[:, 0], anchors[:, 1], anchors[:, 2], c='red', s=100.0)
+  ax.set_axis_off()
+  ax.set_box_aspect(aspect)
+  plt.savefig('images/cloud3d.png')
+  return fig
+
+def plot_3d_plotly(points, cloud, anchors):
+  data = []
+  data.append(go.Scatter3d(x=points[:, 0], y=points[:, 1], z=points[:, 2], mode='markers', marker_color='blue', marker_size=1.))
+  data.append(go.Scatter3d(x=cloud[:, 0], y=cloud[:, 1], z=cloud[:, 2], mode='markers', marker_color='orange', marker_size=1.))
+  if anchors is not None:
+    data.append(go.Scatter3d(x=anchors[:, 0], y=anchors[:, 1], z=anchors[:, 2], mode='markers'))
+  fig = go.Figure(data=data)
+  return fig
+
+def plot_3d_trimesh(q, level_set, sdf_vals, grid, grid_res, plot_wandb=True):
+  import trimesh
+  from skimage import measure
+  delta = (grid[1,2] - grid[0,2]).item()
+  bbox_min = grid[0,:]
+  sdf_vals = sdf_vals.reshape(grid_res, grid_res, grid_res)
+  verts, faces, normals, values = measure.marching_cubes(sdf_vals, level=level_set, spacing=(delta, delta, delta), gradient_direction='ascent')
+  verts = verts + bbox_min[None,:]
+  mesh = trimesh.base.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
+  q = 0 if q is None else q
+  filename = f"weights/mesh/modelnet_{q:.3f}.off"
+  mesh.export(filename)
+  if plot_wandb:
+    import wandb
+    wandb.save(filename)
+  return mesh.show()
+
+def plot_3d(model, points, *,
+            level_set=None, tol=None, domain=None,
+            aspect=[1., 1., 1.], q=None,
+            grid_res=128, max_cloud=5000,
+            anchor_plot=False, modes='ratio',
+            plot_backend='trimesh', plot_wandb=True):
+  if isinstance(modes, str):
+    modes = [modes]
+  if level_set is None:
+    inside = model.predict(points, batch_size=512, verbose=1)
+    tol = max(inside.max()-inside.mean(), inside.mean()-inside.min())
+    print(f"[P] Min={inside.min()} Avg={inside.mean()} Max={inside.max()}")
+    print(f"[P] LevelSet={level_set} Tol={tol}")
+  bbmin, bbmax = domain
+  ax_coords = np.linspace(bbmin, bbmax, grid_res)
+  grid_x, grid_y, grid_z = np.meshgrid(ax_coords, ax_coords, ax_coords)
+  grid = np.stack((grid_x.flatten(), grid_y.flatten(), grid_z.flatten()), axis=-1)
+  box_size = (bbmax-bbmin)/grid_res
+  sdf_vals = model.predict(grid, batch_size=512, verbose=1)
+  model_weights_path = os.path.join("weights", "model_weights.h5")
+  model.save_weights(model_weights_path)
+  if plot_wandb:
+    import wandb
+    wandb.save(model_weights_path)
+  print(f"[Domain] Min={sdf_vals.min()} Max={sdf_vals.max()}")
+  for mode in modes:
+    if mode == 'surface':
+      T = level_set if level_set is not None else inside.mean()
+      zeros = (np.abs(sdf_vals-T) <= tol).flatten()
+    elif mode == 'volume':
+      T = level_set if level_set is not None else inside.min()
+      zeros = (sdf_vals >= T).flatten()
+    elif mode == 'ratio':
+      T = np.quantile(inside, q)
+      tol = float(np.quantile(inside, min(1., q*1.1)) - np.quantile(inside, q*0.9))
+      zeros = (np.abs(sdf_vals-T) <= tol).flatten()
+    plt.hist(sdf_vals)
+    cloud = grid[zeros, :]
+    print(f"Number of voxels selected:{len(cloud)}")
+    if len(cloud) >= max_cloud:
+      cloud = np.random.permutation(cloud)[:max_cloud]
+    anchors = None
+    if anchor_plot:
+      anchors = np.array([[0., 0., 0.]])
+      for x, y, z in itertools.product(domain, domain, domain):
+        anchors = np.concatenate([anchors, np.array([[x, y, z]])])
+    if plot_backend == 'plt':
+      fig = plot_3d_plt(points, cloud, anchors, aspect)
+      fig.show()
+    elif plot_backend == 'plotly':
+      fig = plot_3d_plotly(points, cloud, anchors)
+      fig.show()
+    elif plot_backend == 'trimesh':
+      return plot_3d_trimesh(q, T, sdf_vals, grid, grid_res, plot_wandb=plot_wandb)
