@@ -60,12 +60,14 @@ def load_toy_2d(name, num_pts, noise):
   ds_fun = datasets[name]
   return ds_fun()  # create dataset as numpy array.
 
-def preprocess_mnist(image, label, domain):
+def preprocess_mnist(image, label, domain, rgb=False):
   """Renormalize images in suitable range."""
   image = tf.cast(image, tf.float32) / 255.  # [0, 1] range
   domain_range = domain[1] - domain[0] 
   image = image * domain_range # [0, 1] -> [0, domain_range]
   image = image - domain_range*0.5 # [0, domain_range] -> [-domain_range/2, domain_range/2]
+  if rgb:
+    image = tf.concat([image, image, image], axis=-1)
   return image
 
 def preprocess_cifar10(image, label, domain):

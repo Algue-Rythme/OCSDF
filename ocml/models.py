@@ -119,7 +119,7 @@ def spectral_VGG_V2(input_shape, k_coef_lip=1., scale=1, legacy=False):
 
 
 def spectral_VGG_V3(input_shape, k_coef_lip=1.):
-  layers = [InputLayer(input_shape)]
+  # layers = [InputLayer(input_shape)]
   activation = GroupSort2
   window_size = (3, 3)
   layers = [
