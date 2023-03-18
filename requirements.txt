@@ -1,0 +1,12 @@
+scikit-learn
+matplotlib  # for plotting [optional]
+plotly  # for plotting [optional]
+pandas
+numpy
+scipy
+tqdm  # for progress bars
+wandb  # for logging [optional]
+trimesh  # for implicit shape parameterization [optional]
+tensorflow>=2.4.0
+tensorflow_datasets
+deel-lip>=1.4.0  # for Lipschitz layers
